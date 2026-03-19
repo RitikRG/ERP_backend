@@ -1,5 +1,6 @@
 import User from "../models/user.js";
 import Organization from "../models/organisation.js";
+import ShopSOP from "../models/shopSOP.js";
 import bcrypt from 'bcryptjs';
 
 // ==========================================================
@@ -87,6 +88,87 @@ export const updateOrgSettings = async (req, res) => {
 
   } catch (err) {
     console.error("Update org settings error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ==========================================================
+// SHOP SOP SETTINGS
+// ==========================================================
+
+const buildSopPayload = (data = {}) => ({
+  delivery: {
+    enabled: data.delivery?.enabled ?? true,
+    minimumOrder: Number(data.delivery?.minimumOrder ?? 150),
+    hoursStart: data.delivery?.hoursStart || "09:00",
+    hoursEnd: data.delivery?.hoursEnd || "21:00",
+    days: data.delivery?.days || "Monday to Saturday",
+  },
+  payment: {
+    cod: data.payment?.cod ?? true,
+    upi: data.payment?.upi ?? true,
+  },
+  shop: {
+    openTime: data.shop?.openTime || "09:00",
+    closeTime: data.shop?.closeTime || "21:00",
+    weeklyOff: data.shop?.weeklyOff || "Sunday",
+    contact: data.shop?.contact || "",
+  },
+  rules: {
+    allowSubstitutions: data.rules?.allowSubstitutions ?? true,
+    partialOrders: data.rules?.partialOrders ?? true,
+    maxItems:
+      data.rules?.maxItems === "" || data.rules?.maxItems === undefined
+        ? null
+        : Number(data.rules.maxItems),
+    specialInstructions: data.rules?.specialInstructions || "",
+  },
+});
+
+export const getSopSettings = async (req, res) => {
+  try {
+    const { org_id } = req.params;
+
+    let sop = await ShopSOP.findOne({ shopId: org_id }).lean();
+
+    if (!sop) {
+      sop = await ShopSOP.create({ shopId: org_id });
+      sop = sop.toObject();
+    }
+
+    res.json({ sop: buildSopPayload(sop) });
+  } catch (err) {
+    console.error("Get SOP settings error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const updateSopSettings = async (req, res) => {
+  try {
+    const { org_id } = req.params;
+    const payload = buildSopPayload(req.body);
+
+    const sop = await ShopSOP.findOneAndUpdate(
+      { shopId: org_id },
+      {
+        $set: {
+          shopId: org_id,
+          ...payload,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    ).lean();
+
+    res.json({
+      message: "SOP settings updated successfully",
+      sop: buildSopPayload(sop),
+    });
+  } catch (err) {
+    console.error("Update SOP settings error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
