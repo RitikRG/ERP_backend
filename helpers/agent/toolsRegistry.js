@@ -116,7 +116,7 @@ export const toolRegistry = {
 
     const order = await OnlineOrder.create({
       organisationId: session.organisationId,
-      customerNumber: session.customerNumber,
+      customerNumber: session.mobile_number,
       items: session.cart.map((item) => ({
         productId: item.productId,
         productName: item.productName,
@@ -137,6 +137,27 @@ export const toolRegistry = {
       orderId: order._id,
       total,
       message: `Order placed successfully! Order ID: ${order._id}. Total: ₹${total}. Payment: ${paymentMethod.toUpperCase()}.`,
+    };
+  },
+
+  getCatalog: async (args, session) => {
+    const products = await Product.find({
+      org_id: session.organisationId,
+      quantity: { $gt: 0 }, // only in-stock items
+    })
+      .select("name price quantity") // only fetch what the agent needs
+      .lean();
+
+    if (products.length === 0) {
+      return { message: "No products currently in stock." };
+    }
+
+    const catalog = products.map((p) => `- ${p.name} @ ₹${p.price}`).join("\n");
+
+    return {
+      count: products.length,
+      catalog,
+      message: `${products.length} products available:\n${catalog}`,
     };
   },
 };

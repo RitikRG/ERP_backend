@@ -54,6 +54,7 @@ import organisationRoutes from "./routes/organisation.js";
 import supplierRoutes from "./routes/supplier.js";
 import purchaseRoutes from "./routes/purchase.js";
 import saleRoutes from "./routes/sales.js";
+import onlineOrderRoutes from "./routes/onlineOrders.js";
 import customerRoutes from "./routes/customers.js";
 import settingsRoutes from "./routes/settings.js";
 import dashboardRoutes from "./routes/dashboard.js";
@@ -71,6 +72,9 @@ app.use("/api/org", organisationRoutes);
 
 // Use the sales routes for all requests starting with '/api/sale'
 app.use("/api/sale", saleRoutes);
+
+// Use the online order routes for all requests starting with '/api/online-orders'
+app.use("/api/online-orders", onlineOrderRoutes);
 
 // Use the supplier routes for all requests starting with '/api/supplier'
 app.use("/api/supplier", supplierRoutes);

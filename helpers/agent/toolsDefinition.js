@@ -110,4 +110,17 @@ export const toolDefinitions = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "getCatalog",
+      description:
+        "Get a list of all products currently in stock for this shop. Call this when the customer asks what is available, what the shop sells, or when they seem unsure what to order. Do not call this if the customer already knows what they want.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
 ];

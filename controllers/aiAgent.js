@@ -203,7 +203,7 @@ export const recieveMessage = async (req, res) => {
     // Layer 3
 
     const session = await getOrCreateSession(payload.customerNumber, org._id);
-    const sop = await getSopForShop(org._id);
+    const sop = await getSopForShop(org._id, org);
     const reply = await runAgentLoop(session, transcript, sop);
 
     // update session

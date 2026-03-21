@@ -101,13 +101,12 @@ export const runAgentLoop = async (session, transcript, sop) => {
       tools: completionPayload.tools,
       tool_choice: completionPayload.tool_choice,
     });
-    logStep("groq.chat.completions.create raw response", response);
 
     const message = response.choices[0].message;
     const finishReason = response.choices[0].finish_reason;
 
-    logStep("Parsed LLM message", message);
-    logStep("finish_reason", finishReason);
+    // logStep("Parsed LLM message", message);
+    // logStep("finish_reason", finishReason);
 
     // --- CASE 1: LLM wants to call tools ---
     if (finishReason === "tool_calls" && message.tool_calls?.length > 0) {
@@ -141,7 +140,6 @@ export const runAgentLoop = async (session, transcript, sop) => {
             toolResult = await fn(toolArgs, session); // session passed so tools can mutate cart
           }
         } catch (err) {
-          console.error(`[L3] Tool ${toolName} failed:`, err.message);
           logStep(`Tool ${toolName} error object`, err);
           toolResult = { error: `Tool ${toolName} failed: ${err.message}` };
         }
