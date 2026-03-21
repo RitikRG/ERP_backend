@@ -3,6 +3,10 @@ import Groq from "groq-sdk";
 import fetch from "node-fetch";
 import twilio from "twilio";
 import { v2 as cloudinary } from "cloudinary";
+import { getOrganizationByMobileNumber } from "./organisations.js";
+import { getOrCreateSession } from "../helpers/agent/sessionHelpers.js";
+import { getSopForShop } from "../helpers/agent/sopHelpers.js";
+import { runAgentLoop } from "../helpers/agent/agentLoops.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -157,7 +161,7 @@ export const recieveMessage = async (req, res) => {
   res.status(200).send();
 
   try {
-    const { From, Body, NumMedia, MediaUrl0 } = req.body;
+    const { From, Body, To, NumMedia, MediaUrl0 } = req.body;
 
     // log the raw message
     await MessageRecievedLogs.create(req.body);
@@ -184,8 +188,34 @@ export const recieveMessage = async (req, res) => {
       return;
     }
 
-    // Layer 3 comes here — processMessage(payload, transcript)
-    // we'll build this next
+    // Layer 3
+
+    // identify the organisation
+    const org = await getOrganizationByMobileNumber(To);
+    if (!org || org === null) {
+      await sendMessage(
+        payload.customerNumber,
+        "Sorry, The shop does not support online orders.",
+        originalInputWasAudio
+      );
+      return;
+    }
+    // Layer 3
+
+    const session = await getOrCreateSession(payload.customerNumber, org._id);
+    const sop = await getSopForShop(org._id);
+    const reply = await runAgentLoop(session, transcript, sop);
+
+    // update session
+    session.lastActivityAt = new Date();
+    await session.save();
+
+    // layer 5
+    await sendMessage(
+      payload.customerNumber,
+      reply,
+      payload.originalInputWasAudio
+    );
   } catch (err) {
     console.error("Error in recieveMessage:", err.message);
   }

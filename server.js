@@ -58,6 +58,7 @@ import customerRoutes from "./routes/customers.js";
 import settingsRoutes from "./routes/settings.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import agentRoutes from "./routes/aiAgentRoutes.js";
+import { startCronJobs } from "./helpers/cronJobs.js";
 
 // Use the auth routes for all requests starting with '/api/auth'
 app.use("/api/auth", authRoutes);
@@ -104,7 +105,7 @@ mongoose
   .connect(DB_URL)
   .then(() => {
     console.log("Connected to MongoDB!");
-
+    startCronJobs();
     // Start the server ONLY after the database connection is successful
     https.createServer({ key, cert }, app).listen(PORT, () => {
       console.log(`✅ Secure server running at https://localhost:${PORT}`);
