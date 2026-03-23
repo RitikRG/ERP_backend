@@ -35,6 +35,14 @@ const saleSchema = new mongoose.Schema({
     required: false
   },
 
+  online_order_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OnlineOrder',
+    required: false,
+    unique: true,
+    sparse: true
+  },
+
   status: {
     type: String,
     enum: ['pending', 'completed', 'cancelled'],

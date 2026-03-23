@@ -23,6 +23,7 @@
     "mongoose": "^8.19.1",
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
+    "puppeteer": "^24.40.0",
     "twilio": "^5.13.0"
   },
   "devDependencies": {

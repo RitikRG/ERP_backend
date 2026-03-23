@@ -1,10 +1,8 @@
-import Groq from "groq-sdk";
 import { inspect } from "node:util";
 import { buildBasePrompt } from "./basePrompt.js";
 import { toolDefinitions } from "./toolsDefinition.js";
 import { toolRegistry } from "./toolsRegistry.js";
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+import { createChatResponse } from "./aiFunctions.js";
 
 const MAX_ITERATIONS = 5; // prevent infinite loops
 
@@ -54,7 +52,7 @@ export const runAgentLoop = async (session, transcript, sop) => {
       content: buildBasePrompt(sop, session.cart),
     },
     ...session.history.map((msg) => {
-      // strip out any keys Groq doesn't accept per role
+      // strip out any keys the provider wrapper does not pass through
       if (msg.role === "user") {
         return { role: "user", content: msg.content };
       }
@@ -95,15 +93,12 @@ export const runAgentLoop = async (session, transcript, sop) => {
       tool_choice: "auto",
     };
 
-    const response = await groq.chat.completions.create({
+    const { message, finishReason } = await createChatResponse({
       model: completionPayload.model,
       messages: completionPayload.messages,
       tools: completionPayload.tools,
-      tool_choice: completionPayload.tool_choice,
+      toolChoice: completionPayload.tool_choice,
     });
-
-    const message = response.choices[0].message;
-    const finishReason = response.choices[0].finish_reason;
 
     // logStep("Parsed LLM message", message);
     // logStep("finish_reason", finishReason);

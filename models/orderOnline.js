@@ -25,7 +25,13 @@ const onlineOrderSchema = new mongoose.Schema(
     total: { type: Number, required: true },
     status: {
       type: String,
-      enum: ["pending", "fulfilled", "cancelled"],
+      enum: [
+        "pending",
+        "in-delivery",
+        "ready-for-pickup",
+        "fulfilled",
+        "cancelled",
+      ],
       default: "pending",
     },
     paymentMethod: {
@@ -33,7 +39,16 @@ const onlineOrderSchema = new mongoose.Schema(
       enum: ["cod", "upi", "unknown"],
       default: "unknown",
     },
+    saleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Sale",
+      default: null,
+    },
     notes: { type: String, default: "" }, // any special instructions from customer
+    deliveryAddress: { type: String, default: "" },
+    receiptImagePath: { type: String, default: "" },
+    receiptImageUrl: { type: String, default: "" },
+    receiptGeneratedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

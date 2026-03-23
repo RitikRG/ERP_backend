@@ -1,5 +1,6 @@
 import Product from "../../models/product.js";
 import OnlineOrder from "../../models/orderOnline.js";
+import { generateOrderReceiptAssets } from "../orders/orderReceipt.js";
 /***
  * toolRegistry
  * Each function receives (args, session) where:
@@ -103,7 +104,7 @@ export const toolRegistry = {
   },
 
   orderNow: async (args, session) => {
-    const { paymentMethod, notes } = args;
+    const { paymentMethod, notes, deliveryAddress } = args;
 
     if (session.cart.length === 0) {
       return { success: false, message: "Cannot place order — cart is empty." };
@@ -126,8 +127,30 @@ export const toolRegistry = {
       total,
       paymentMethod,
       notes,
+      deliveryAddress,
       status: "pending",
     });
+
+    try {
+      const receiptAssets = await generateOrderReceiptAssets(order);
+
+      order.receiptImagePath = receiptAssets.publicRelativePath;
+      order.receiptImageUrl = receiptAssets.mediaUrl || "";
+      order.receiptGeneratedAt = new Date();
+      await order.save();
+
+      session.$locals = session.$locals || {};
+      session.$locals.orderReceipt = {
+        orderId: order._id,
+        mediaUrl: receiptAssets.mediaUrl,
+        receiptImagePath: receiptAssets.publicRelativePath,
+      };
+    } catch (receiptError) {
+      console.error(
+        `[OrderReceipt] Failed to generate receipt for order ${order._id}:`,
+        receiptError.message
+      );
+    }
 
     // clear cart after successful order
     session.cart = [];
@@ -136,7 +159,7 @@ export const toolRegistry = {
       success: true,
       orderId: order._id,
       total,
-      message: `Order placed successfully! Order ID: ${order._id}. Total: ₹${total}. Payment: ${paymentMethod.toUpperCase()}.`,
+      message: `Order placed successfully! Order ID: ${order._id}. Total: ₹${total}. Payment: ${paymentMethod.toUpperCase()}.${deliveryAddress ? ` Delivery address: ${deliveryAddress}.` : ""}`,
     };
   },
 

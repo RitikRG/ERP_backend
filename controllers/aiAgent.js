@@ -1,14 +1,15 @@
 import MessageRecievedLogs from "../models/messageRecievedLogs.js";
-import Groq from "groq-sdk";
 import fetch from "node-fetch";
 import twilio from "twilio";
-import { v2 as cloudinary } from "cloudinary";
 import { getOrganizationByMobileNumber } from "./organisations.js";
 import { getOrCreateSession } from "../helpers/agent/sessionHelpers.js";
 import { getSopForShop } from "../helpers/agent/sopHelpers.js";
 import { runAgentLoop } from "../helpers/agent/agentLoops.js";
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+import {
+  generateSpeechAudio,
+  transcribeAudioFile,
+} from "../helpers/agent/aiFunctions.js";
+import { uploadAudioBuffer } from "../helpers/media/mediaAssets.js";
 
 // Twilio client
 const twilioClient = twilio(
@@ -18,7 +19,7 @@ const twilioClient = twilio(
 
 /***
  * functionName: transcribeAudio
- * description: use groq whisper to transcript audio to text.
+ * description: transcribe audio to text using the configured AI provider.
  */
 const transcribeAudio = async (audioUrl) => {
   const response = await fetch(audioUrl, {
@@ -38,29 +39,22 @@ const transcribeAudio = async (audioUrl) => {
   const buffer = Buffer.from(arrayBuffer);
   const file = new File([buffer], "audio.ogg", { type: "audio/ogg" });
 
-  const transcription = await groq.audio.transcriptions.create({
+  const transcription = await transcribeAudioFile({
     file,
-    model: "whisper-large-v3",
   });
 
-  return transcription.text;
+  return transcription;
 };
 
 /***
  * functionName: textToSpeech
- * description: converts text to audio buffer using groq's playai tts model
+ * description: converts text to audio buffer using the configured AI provider
  */
-const textToSpeech = async (text) => {
-  const response = await groq.audio.speech.create({
-    model: "canopylabs/orpheus-v1-english",
-    input: text,
-    voice: "austin", // clear, neutral English/Hinglish voice
-    response_format: "wav",
+const textToSpeech = async (text) =>
+  generateSpeechAudio({
+    text,
+    voice: "austin",
   });
-
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-};
 
 /***
  * functionName: sendMessage
@@ -68,15 +62,23 @@ const textToSpeech = async (text) => {
  * if originalInputWasAudio is true — converts reply to audio and sends as voice note
  * if false — sends as plain text
  */
-export const sendMessage = async (to, replyText, originalInputWasAudio) => {
+export const sendMessage = async (
+  to,
+  replyText,
+  originalInputWasAudio,
+  options = {}
+) => {
   try {
-    if (originalInputWasAudio) {
+    if (options.mediaUrl) {
+      await twilioClient.messages.create({
+        from: `whatsapp:${process.env.TWILIO_SANDBOX_NUMBER}`,
+        to,
+        body: replyText,
+        mediaUrl: [options.mediaUrl],
+      });
+    } else if (originalInputWasAudio) {
       // convert reply to audio
       const audioBuffer = await textToSpeech(replyText);
-
-      // Twilio needs a publicly accessible URL to send media
-      // for now we upload to a temp endpoint on our own server
-      // we'll improve this when we set up file hosting
       const mediaUrl = await uploadAudioBuffer(audioBuffer);
 
       await twilioClient.messages.create({
@@ -102,31 +104,6 @@ export const sendMessage = async (to, replyText, originalInputWasAudio) => {
       body: replyText,
     });
   }
-};
-
-/***
- * functionName: uploadAudioBuffer
- * description: temporarily serves the audio buffer via your own express server
- * returns a publicly accessible URL that Twilio can fetch
- * note: implemented using Cloudinary
- */
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
-const uploadAudioBuffer = async (audioBuffer) => {
-  const result = await new Promise((resolve, reject) => {
-    cloudinary.uploader
-      .upload_stream(
-        { resource_type: "video", format: "mp3" }, // Cloudinary uses 'video' for audio
-        (error, result) => (error ? reject(error) : resolve(result))
-      )
-      .end(audioBuffer);
-  });
-  return result.secure_url;
 };
 
 export const resolveTranscript = async (payload) => {
@@ -205,6 +182,7 @@ export const recieveMessage = async (req, res) => {
     const session = await getOrCreateSession(payload.customerNumber, org._id);
     const sop = await getSopForShop(org._id, org);
     const reply = await runAgentLoop(session, transcript, sop);
+    const outboundReceipt = session.$locals?.orderReceipt ?? null;
 
     // update session
     session.lastActivityAt = new Date();
@@ -214,7 +192,10 @@ export const recieveMessage = async (req, res) => {
     await sendMessage(
       payload.customerNumber,
       reply,
-      payload.originalInputWasAudio
+      payload.originalInputWasAudio,
+      {
+        mediaUrl: outboundReceipt?.mediaUrl,
+      }
     );
   } catch (err) {
     console.error("Error in recieveMessage:", err.message);
