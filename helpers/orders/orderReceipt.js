@@ -15,6 +15,30 @@ const RECEIPT_DIRECTORY = path.join(
   "order-receipts"
 );
 
+const getPuppeteerManagedExecutablePath = () => {
+  try {
+    return puppeteer.executablePath();
+  } catch {
+    return undefined;
+  }
+};
+
+const BROWSER_EXECUTABLE_CANDIDATES = [
+  process.env.PUPPETEER_EXECUTABLE_PATH,
+  getPuppeteerManagedExecutablePath(),
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/chromium",
+  "/snap/bin/chromium",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+].filter(Boolean);
+
 const formatCurrency = (value) => `Rs. ${Number(value || 0).toFixed(2)}`;
 
 const formatDateTime = (value) =>
@@ -30,6 +54,19 @@ const escapeHtml = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+
+const resolveBrowserExecutablePath = async () => {
+  for (const candidate of BROWSER_EXECUTABLE_CANDIDATES) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Keep checking known Chromium-based browser locations.
+    }
+  }
+
+  return undefined;
+};
 
 const buildOrderReceiptHtml = ({ order, organisation }) => {
   const itemsMarkup = order.items
@@ -121,7 +158,10 @@ const buildOrderReceiptHtml = ({ order, organisation }) => {
                 <div style="display: flex; justify-content: space-between; font-size: 14px; color: #4b5563; margin-bottom: 14px;">
                   <span>Total Units</span>
                   <span>${escapeHtml(
-                    order.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+                    order.items.reduce(
+                      (sum, item) => sum + Number(item.quantity || 0),
+                      0
+                    )
                   )}</span>
                 </div>
                 <div style="height: 1px; background: #e5e7eb; margin: 14px 0 18px;"></div>
@@ -139,8 +179,18 @@ const buildOrderReceiptHtml = ({ order, organisation }) => {
 };
 
 const renderReceiptImage = async (html, outputPath) => {
+  console.log("ok");
+  const executablePath = await resolveBrowserExecutablePath();
+
+  if (!executablePath) {
+    throw new Error(
+      "No Chromium executable found for Puppeteer. Set PUPPETEER_EXECUTABLE_PATH or install one with `npx puppeteer browsers install chrome`."
+    );
+  }
+
   const browser = await puppeteer.launch({
     headless: true,
+    executablePath,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
@@ -159,7 +209,9 @@ const renderReceiptImage = async (html, outputPath) => {
 };
 
 export const generateOrderReceiptAssets = async (orderDocument) => {
-  const order = orderDocument.toObject ? orderDocument.toObject() : orderDocument;
+  const order = orderDocument.toObject
+    ? orderDocument.toObject()
+    : orderDocument;
   const organisation = await Organisation.findById(order.organisationId).lean();
 
   await fs.mkdir(RECEIPT_DIRECTORY, { recursive: true });

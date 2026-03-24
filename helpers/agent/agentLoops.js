@@ -87,7 +87,6 @@ export const runAgentLoop = async (session, transcript, sop) => {
     // call the LLM
     const messages = buildMessages();
     const completionPayload = {
-      model: "openai/gpt-oss-20b",
       messages,
       tools: toolDefinitions,
       tool_choice: "auto",
