@@ -1,6 +1,7 @@
 import Customer from "../../models/customer.js";
 import Product from "../../models/product.js";
 import Sale from "../../models/sale.js";
+import { syncPaidOnlineOrderToSale } from "./paymentSync.js";
 
 const normalizeCustomerNumber = (customerNumber) => {
   const digits = String(customerNumber || "").replace(/\D/g, "");
@@ -55,8 +56,9 @@ export const createSaleFromOnlineOrder = async (order) => {
   });
 
   if (existingSale) {
+    const syncResult = await syncPaidOnlineOrderToSale(order, existingSale);
     return {
-      sale: existingSale,
+      sale: syncResult.sale || existingSale,
       created: false,
     };
   }
@@ -88,8 +90,10 @@ export const createSaleFromOnlineOrder = async (order) => {
     )
   );
 
+  const syncResult = await syncPaidOnlineOrderToSale(order, sale);
+
   return {
-    sale,
+    sale: syncResult.sale || sale,
     created: true,
   };
 };

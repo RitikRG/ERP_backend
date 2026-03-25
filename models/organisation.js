@@ -10,6 +10,16 @@ const organisationSchema = new mongoose.Schema({
     type: String,
     required: false,
     default: ""
+  },
+  razorpay_secret: {
+    type: String,
+    required: false,
+    default: ""
+  },
+  razorpay_webhook_secret: {
+    type: String,
+    required: false,
+    default: ""
   }
 
 }, { 

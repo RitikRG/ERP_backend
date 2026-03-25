@@ -181,8 +181,18 @@ export const recieveMessage = async (req, res) => {
 
     const session = await getOrCreateSession(payload.customerNumber, org._id);
     const sop = await getSopForShop(org._id, org);
-    const reply = await runAgentLoop(session, transcript, sop);
+    const paymentContext = {
+      upiEnabled: Boolean(
+        sop.payment.upi && org.razorpay_key && org.razorpay_secret
+      ),
+    };
+    let reply = await runAgentLoop(session, transcript, sop, paymentContext);
     const outboundReceipt = session.$locals?.orderReceipt ?? null;
+    const outboundPaymentLink = session.$locals?.paymentLink?.shortUrl ?? "";
+
+    if (outboundPaymentLink && !reply.includes(outboundPaymentLink)) {
+      reply = `${reply}\nPay here: ${outboundPaymentLink}`;
+    }
 
     // update session
     session.lastActivityAt = new Date();

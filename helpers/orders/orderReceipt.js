@@ -73,11 +73,11 @@ const buildOrderReceiptHtml = ({ order, organisation }) => {
     .map(
       (item, index) => `
         <tr>
-          <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #111827;">${index + 1}</td>
-          <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #111827; font-weight: 600;">${escapeHtml(item.productName)}</td>
-          <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #4b5563; text-align: center;">${escapeHtml(item.quantity)}</td>
-          <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #4b5563; text-align: right;">${formatCurrency(item.price)}</td>
-          <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #111827; text-align: right; font-weight: 600;">${formatCurrency(item.price * item.quantity)}</td>
+          <td style="padding: 13px 16px; border-bottom: 1px solid #f0f0f0; font-size: 13px; color: #9ca3af; font-variant-numeric: tabular-nums;">${String(index + 1).padStart(2, "0")}</td>
+          <td style="padding: 13px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; color: #111827; font-weight: 600; letter-spacing: -0.01em;">${escapeHtml(item.productName)}</td>
+          <td style="padding: 13px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; color: #374151; text-align: center; font-variant-numeric: tabular-nums;">${escapeHtml(item.quantity)}</td>
+          <td style="padding: 13px 16px; border-bottom: 1px solid #f0f0f0; font-size: 13px; color: #6b7280; text-align: right; font-variant-numeric: tabular-nums;">${formatCurrency(item.price)}</td>
+          <td style="padding: 13px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; color: #111827; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums;">${formatCurrency(item.price * item.quantity)}</td>
         </tr>
       `
     )
@@ -90,88 +90,129 @@ const buildOrderReceiptHtml = ({ order, organisation }) => {
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Order Receipt</title>
+        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
       </head>
-      <body style="margin: 0; padding: 32px; background: #f3f4f6; font-family: Arial, sans-serif; color: #111827;">
-        <div style="max-width: 900px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 24px; overflow: hidden; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);">
-          <div style="padding: 32px 36px; background: linear-gradient(135deg, #111827 0%, #1f2937 100%); color: #ffffff;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;">
-              <div>
-                <div style="font-size: 13px; letter-spacing: 1.8px; text-transform: uppercase; opacity: 0.72;">Order Receipt</div>
-                <h1 style="margin: 12px 0 8px; font-size: 32px; line-height: 1.15;">${escapeHtml(organisation?.name || "Your Shop")}</h1>
-                <div style="font-size: 14px; line-height: 1.6; opacity: 0.9;">
+      <body style="margin: 0; padding: 40px 24px; background: #edecea; font-family: 'DM Sans', sans-serif; color: #111827; -webkit-font-smoothing: antialiased;">
+        <div style="max-width: 760px; margin: 0 auto; background: #ffffff; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.06), 0 20px 60px rgba(0,0,0,0.10);">
+
+          <!-- ACCENT BAR -->
+          <div style="height: 4px; background: linear-gradient(90deg, #c8a96e 0%, #e8c98a 50%, #c8a96e 100%);"></div>
+
+          <!-- HEADER -->
+          <div style="padding: 36px 44px 32px; background: #0f1117; color: #ffffff; position: relative; overflow: hidden;">
+            <!-- subtle diagonal texture lines -->
+            <div style="position: absolute; inset: 0; background: repeating-linear-gradient(135deg, transparent, transparent 40px, rgba(255,255,255,0.015) 40px, rgba(255,255,255,0.015) 41px); pointer-events: none;"></div>
+
+            <div style="position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; flex-wrap: wrap;">
+              <!-- Left: Brand -->
+              <div style="flex: 1 1 300px;">
+                <div style="display: inline-block; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: #c8a96e; font-weight: 500; margin-bottom: 10px; border: 1px solid rgba(200,169,110,0.4); padding: 4px 10px; border-radius: 2px;">Order Receipt</div>
+                <h1 style="margin: 0 0 14px; font-family: 'Playfair Display', Georgia, serif; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; color: #ffffff;">${escapeHtml(organisation?.name || "Your Shop")}</h1>
+                <div style="font-size: 13px; line-height: 1.8; color: #9ca3af; font-weight: 300;">
                   <div>${escapeHtml(organisation?.address || "Address unavailable")}</div>
                   <div>Phone: ${escapeHtml(organisation?.phone || "N/A")}</div>
-                  <div>GST: ${escapeHtml(organisation?.gst || "N/A")}</div>
+                  <div>GST: <span style="color: #d1d5db; font-weight: 500;">${escapeHtml(organisation?.gst || "N/A")}</span></div>
                 </div>
               </div>
-              <div style="min-width: 220px; padding: 18px 20px; border-radius: 18px; background: rgba(255, 255, 255, 0.1); text-align: right;">
-                <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; opacity: 0.7;">Receipt No.</div>
-                <div style="margin-top: 6px; font-size: 18px; font-weight: 700;">${escapeHtml(String(order._id))}</div>
-                <div style="margin-top: 14px; font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; opacity: 0.7;">Issued On</div>
-                <div style="margin-top: 6px; font-size: 15px; font-weight: 600;">${escapeHtml(formatDateTime(order.createdAt || new Date()))}</div>
+
+              <!-- Right: Receipt meta -->
+              <div style="min-width: 200px; text-align: right; padding-top: 4px;">
+                <div style="font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: #6b7280; font-weight: 500;">Receipt No.</div>
+                <div style="margin-top: 5px; font-size: 13px; font-weight: 600; color: #e5e7eb; letter-spacing: 0.03em; font-variant-numeric: tabular-nums;">${escapeHtml(String(order._id))}</div>
+                <div style="margin-top: 18px; font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: #6b7280; font-weight: 500;">Issued On</div>
+                <div style="margin-top: 5px; font-size: 15px; font-weight: 600; color: #ffffff;">${escapeHtml(formatDateTime(order.createdAt || new Date()))}</div>
               </div>
             </div>
           </div>
 
-          <div style="padding: 28px 36px 12px;">
-            <div style="display: flex; gap: 18px; flex-wrap: wrap;">
-              <div style="flex: 1 1 280px; padding: 18px 20px; border: 1px solid #e5e7eb; border-radius: 18px; background: #f9fafb;">
-                <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; color: #6b7280;">Customer</div>
-                <div style="margin-top: 10px; font-size: 16px; font-weight: 700;">${escapeHtml(order.customerNumber)}</div>
-                <div style="margin-top: 10px; font-size: 14px; line-height: 1.6; color: #4b5563;">
-                  <div>Payment intent: ${escapeHtml(String(order.paymentMethod || "unknown").toUpperCase())}</div>
-                  <div>Status: ${escapeHtml(order.status || "pending")}</div>
+          <!-- DIVIDER STRIP -->
+          <div style="height: 1px; background: linear-gradient(90deg, transparent, #e5e7eb 20%, #e5e7eb 80%, transparent);"></div>
+
+          <!-- INFO CARDS -->
+          <div style="padding: 28px 44px 8px; display: flex; gap: 16px; flex-wrap: wrap;">
+            <!-- Customer -->
+            <div style="flex: 1 1 260px; padding: 20px 22px; border: 1px solid #f0f0f0; border-radius: 4px; background: #fafafa; border-left: 3px solid #c8a96e;">
+              <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 2.5px; color: #9ca3af; font-weight: 500; margin-bottom: 12px;">Customer</div>
+              <div style="font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 10px; word-break: break-all;">${escapeHtml(order.customerNumber)}</div>
+              <div style="font-size: 12.5px; line-height: 1.7; color: #6b7280;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <span style="width: 6px; height: 6px; background: ${order.paymentMethod === "COD" ? "#f59e0b" : "#10b981"}; border-radius: 50%; display: inline-block; flex-shrink: 0;"></span>
+                  <span>Payment: <strong style="color: #374151;">${escapeHtml(String(order.paymentMethod || "unknown").toUpperCase())}</strong></span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+                  <span style="width: 6px; height: 6px; background: ${order.status === "confirmed" ? "#10b981" : "#f59e0b"}; border-radius: 50%; display: inline-block; flex-shrink: 0;"></span>
+                  <span>Status: <strong style="color: #374151; text-transform: capitalize;">${escapeHtml(order.status || "pending")}</strong></span>
                 </div>
               </div>
-              <div style="flex: 1 1 280px; padding: 18px 20px; border: 1px solid #e5e7eb; border-radius: 18px; background: #f9fafb;">
-                <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; color: #6b7280;">Fulfilment</div>
-                <div style="margin-top: 10px; font-size: 14px; line-height: 1.7; color: #111827;">
-                  <div><span style="font-weight: 700;">Delivery Address:</span> ${escapeHtml(order.deliveryAddress || "Pickup order")}</div>
-                  <div><span style="font-weight: 700;">Notes:</span> ${escapeHtml(order.notes || "No special instructions")}</div>
-                </div>
+            </div>
+
+            <!-- Fulfilment -->
+            <div style="flex: 1 1 260px; padding: 20px 22px; border: 1px solid #f0f0f0; border-radius: 4px; background: #fafafa; border-left: 3px solid #d1d5db;">
+              <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 2.5px; color: #9ca3af; font-weight: 500; margin-bottom: 12px;">Fulfilment</div>
+              <div style="font-size: 12.5px; line-height: 1.8; color: #6b7280;">
+                <div><span style="color: #374151; font-weight: 600;">Delivery Address</span></div>
+                <div style="margin-bottom: 8px; color: #111827;">${escapeHtml(order.deliveryAddress || "Pickup order")}</div>
+                <div><span style="color: #374151; font-weight: 600;">Notes</span></div>
+                <div style="color: #9ca3af; font-style: italic;">${escapeHtml(order.notes || "No special instructions")}</div>
               </div>
             </div>
           </div>
 
-          <div style="padding: 12px 36px 36px;">
-            <table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 18px; overflow: hidden;">
+          <!-- ITEMS TABLE -->
+          <div style="padding: 20px 44px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
               <thead>
-                <tr style="background: #f3f4f6;">
-                  <th style="padding: 14px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #6b7280;">#</th>
-                  <th style="padding: 14px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #6b7280;">Item</th>
-                  <th style="padding: 14px 16px; text-align: center; font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #6b7280;">Qty</th>
-                  <th style="padding: 14px 16px; text-align: right; font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #6b7280;">Unit Price</th>
-                  <th style="padding: 14px 16px; text-align: right; font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #6b7280;">Line Total</th>
+                <tr style="border-bottom: 2px solid #111827;">
+                  <th style="padding: 10px 16px 10px 0; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #9ca3af; font-weight: 500; width: 44px;">#</th>
+                  <th style="padding: 10px 16px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #9ca3af; font-weight: 500;">Item</th>
+                  <th style="padding: 10px 16px; text-align: center; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #9ca3af; font-weight: 500; width: 70px;">Qty</th>
+                  <th style="padding: 10px 16px; text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #9ca3af; font-weight: 500; width: 110px;">Unit Price</th>
+                  <th style="padding: 10px 16px 10px 16px; text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #9ca3af; font-weight: 500; width: 110px;">Total</th>
                 </tr>
               </thead>
               <tbody>
                 ${itemsMarkup}
               </tbody>
             </table>
+          </div>
 
-            <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
-              <div style="width: 320px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fcfcfd; padding: 22px 24px;">
-                <div style="display: flex; justify-content: space-between; font-size: 14px; color: #4b5563; margin-bottom: 14px;">
+          <!-- TOTALS + FOOTER -->
+          <div style="padding: 20px 44px 40px; display: flex; justify-content: flex-end;">
+            <div style="width: 300px;">
+              <!-- Summary lines -->
+              <div style="padding: 16px 0; border-top: 1px solid #f0f0f0;">
+                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #9ca3af; margin-bottom: 9px;">
                   <span>Total Items</span>
-                  <span>${escapeHtml(order.items.length)}</span>
+                  <span style="color: #374151; font-weight: 500;">${escapeHtml(order.items.length)}</span>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 14px; color: #4b5563; margin-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #9ca3af;">
                   <span>Total Units</span>
-                  <span>${escapeHtml(
+                  <span style="color: #374151; font-weight: 500;">${escapeHtml(
                     order.items.reduce(
                       (sum, item) => sum + Number(item.quantity || 0),
                       0
                     )
                   )}</span>
                 </div>
-                <div style="height: 1px; background: #e5e7eb; margin: 14px 0 18px;"></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="font-size: 15px; font-weight: 700; color: #111827;">Grand Total</span>
-                  <span style="font-size: 28px; font-weight: 800; color: #111827;">${formatCurrency(order.total)}</span>
-                </div>
+              </div>
+
+              <!-- Grand Total -->
+              <div style="margin-top: 4px; padding: 18px 20px; background: #0f1117; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #9ca3af; font-weight: 500;">Grand Total</span>
+                <span style="font-family: 'Playfair Display', Georgia, serif; font-size: 26px; font-weight: 700; color: #c8a96e; letter-spacing: -0.02em;">${formatCurrency(order.total)}</span>
               </div>
             </div>
           </div>
+
+          <!-- FOOTER NOTE -->
+          <div style="padding: 18px 44px; background: #fafafa; border-top: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 11px; color: #d1d5db; letter-spacing: 0.05em;">Thank you for your order.</div>
+            <div style="font-size: 11px; color: #d1d5db; letter-spacing: 0.05em; font-style: italic;">${escapeHtml(organisation?.name || "Your Shop")}</div>
+          </div>
+
+          <!-- BOTTOM ACCENT BAR -->
+          <div style="height: 4px; background: linear-gradient(90deg, #c8a96e 0%, #e8c98a 50%, #c8a96e 100%);"></div>
+
         </div>
       </body>
     </html>
@@ -179,7 +220,6 @@ const buildOrderReceiptHtml = ({ order, organisation }) => {
 };
 
 const renderReceiptImage = async (html, outputPath) => {
-  console.log("ok");
   const executablePath = await resolveBrowserExecutablePath();
 
   if (!executablePath) {

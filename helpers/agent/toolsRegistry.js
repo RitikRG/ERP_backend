@@ -1,6 +1,49 @@
 import Product from "../../models/product.js";
 import OnlineOrder from "../../models/orderOnline.js";
+import Organisation from "../../models/organisation.js";
 import { generateOrderReceiptAssets } from "../orders/orderReceipt.js";
+import { createUpiPaymentLink } from "../payments/razorpay.js";
+
+const PAYMENT_LINK_EXPIRY_HOURS = 2;
+
+const buildOnlineOrderItems = (cart) =>
+  cart.map((item) => ({
+    productId: item.productId,
+    productName: item.productName,
+    quantity: item.quantity,
+    price: item.price,
+  }));
+
+const buildOrderConfirmationMessage = ({
+  orderId,
+  total,
+  paymentMethod,
+  deliveryAddress,
+  paymentLinkUrl = "",
+}) => {
+  const lines = [
+    `Order placed successfully! Order ID: ${orderId}.`,
+    `Total: Rs${total}. Payment: ${paymentMethod.toUpperCase()}.`,
+  ];
+
+  if (deliveryAddress) {
+    lines.push(`Delivery address: ${deliveryAddress}.`);
+  }
+
+  if (paymentLinkUrl) {
+    lines.push(`Please pay online using this UPI link: ${paymentLinkUrl}`);
+  }
+
+  return lines.join(" ");
+};
+
+const buildPendingUpiPaymentMessage = ({
+  orderId,
+  total,
+  paymentLinkUrl,
+}) =>
+  `Please complete your UPI payment for Order ID: ${orderId}. Total: Rs${total}. Pay here: ${paymentLinkUrl} I will confirm your order once the payment is received.`;
+
 /***
  * toolRegistry
  * Each function receives (args, session) where:
@@ -11,12 +54,9 @@ export const toolRegistry = {
   checkAvailability: async (args, session) => {
     const { productName, quantity } = args;
 
-    // fuzzy search — case insensitive, partial match
-    // handles "amul butter" matching "Amul Butter 500g"
     const product = await Product.findOne({
       org_id: session.organisationId,
       name: { $regex: productName, $options: "i" },
-      // only show active products with quantity tracked
     }).lean();
 
     if (!product) {
@@ -42,14 +82,13 @@ export const toolRegistry = {
       productName: product.name,
       price: product.price,
       currentStock: product.quantity,
-      message: `${product.name} is available. Price: ₹${product.price} per unit.`,
+      message: `${product.name} is available. Price: Rs${product.price} per unit.`,
     };
   },
 
   addToCart: async (args, session) => {
     const { productId, productName, quantity, price } = args;
 
-    // check if item already in cart — update quantity instead of adding duplicate
     const existingIndex = session.cart.findIndex(
       (item) => item.productId.toString() === productId.toString()
     );
@@ -67,7 +106,7 @@ export const toolRegistry = {
 
     return {
       success: true,
-      message: `${productName} ×${quantity} added to cart.`,
+      message: `${productName} x${quantity} added to cart.`,
       cartTotal: total,
     };
   },
@@ -85,7 +124,7 @@ export const toolRegistry = {
     const itemList = session.cart
       .map(
         (item) =>
-          `${item.productName} ×${item.quantity} — ₹${item.price * item.quantity}`
+          `${item.productName} x${item.quantity} - Rs${item.price * item.quantity}`
       )
       .join(", ");
 
@@ -94,7 +133,7 @@ export const toolRegistry = {
       items: session.cart,
       itemList,
       total,
-      message: `Cart: ${itemList}. Total: ₹${total}`,
+      message: `Cart: ${itemList}. Total: Rs${total}`,
     };
   },
 
@@ -107,23 +146,39 @@ export const toolRegistry = {
     const { paymentMethod, notes, deliveryAddress } = args;
 
     if (session.cart.length === 0) {
-      return { success: false, message: "Cannot place order — cart is empty." };
+      return { success: false, message: "Cannot place order - cart is empty." };
     }
+
+    session.$locals = session.$locals || {};
+    delete session.$locals.paymentLink;
+    delete session.$locals.orderReceipt;
 
     const total = session.cart.reduce(
       (sum, item) => sum + item.price * item.quantity,
       0
     );
 
+    let org = null;
+
+    if (paymentMethod === "upi") {
+      org = await Organisation.findById(session.organisationId).select(
+        "razorpay_key razorpay_secret name"
+      );
+
+      if (!org?.razorpay_key || !org?.razorpay_secret) {
+        return {
+          success: false,
+          paymentUnavailable: true,
+          message:
+            "Online payment is not possible right now. Please choose COD or another available option.",
+        };
+      }
+    }
+
     const order = await OnlineOrder.create({
       organisationId: session.organisationId,
       customerNumber: session.mobile_number,
-      items: session.cart.map((item) => ({
-        productId: item.productId,
-        productName: item.productName,
-        quantity: item.quantity,
-        price: item.price,
-      })),
+      items: buildOnlineOrderItems(session.cart),
       total,
       paymentMethod,
       notes,
@@ -131,20 +186,84 @@ export const toolRegistry = {
       status: "pending",
     });
 
+    let paymentLinkUrl = "";
+
     try {
-      const receiptAssets = await generateOrderReceiptAssets(order);
+      if (paymentMethod === "upi") {
+        const expiresAt = new Date(
+          Date.now() + PAYMENT_LINK_EXPIRY_HOURS * 60 * 60 * 1000
+        );
 
-      order.receiptImagePath = receiptAssets.publicRelativePath;
-      order.receiptImageUrl = receiptAssets.mediaUrl || "";
-      order.receiptGeneratedAt = new Date();
-      await order.save();
+        const paymentLink = await createUpiPaymentLink({
+          keyId: org.razorpay_key,
+          keySecret: org.razorpay_secret,
+          amount: total,
+          referenceId: String(order._id),
+          customerNumber: session.mobile_number,
+          description: `Order payment for ${org.name || "shop"} (${order._id})`,
+          expireBy: expiresAt,
+          notes: {
+            organisationId: String(session.organisationId),
+            orderId: String(order._id),
+            customerNumber: String(session.mobile_number || ""),
+          },
+        });
 
-      session.$locals = session.$locals || {};
-      session.$locals.orderReceipt = {
-        orderId: order._id,
-        mediaUrl: receiptAssets.mediaUrl,
-        receiptImagePath: receiptAssets.publicRelativePath,
+        paymentLinkUrl = paymentLink.short_url || "";
+        order.onlinePayment = {
+          provider: "razorpay",
+          linkId: paymentLink.id || "",
+          shortUrl: paymentLinkUrl,
+          referenceId: paymentLink.reference_id || String(order._id),
+          status: paymentLink.status || "created",
+          amount: Number(paymentLink.amount || 0) / 100,
+          currency: paymentLink.currency || "INR",
+          expiresAt: paymentLink.expire_by
+            ? new Date(Number(paymentLink.expire_by) * 1000)
+            : expiresAt,
+          paymentId: "",
+          paidAt: null,
+          webhookReceivedAt: null,
+          confirmationSentAt: null,
+        };
+        await order.save();
+
+        session.$locals.paymentLink = {
+          orderId: order._id,
+          shortUrl: paymentLinkUrl,
+        };
+      }
+    } catch (paymentError) {
+      await OnlineOrder.findByIdAndDelete(order._id);
+      delete session.$locals.paymentLink;
+      console.error(
+        `[Razorpay] Failed to create payment link for order ${order._id}:`,
+        paymentError.message
+      );
+
+      return {
+        success: false,
+        paymentUnavailable: true,
+        message:
+          "Online payment is not possible right now. Please choose COD or another available option.",
       };
+    }
+
+    try {
+      if (paymentMethod !== "upi") {
+        const receiptAssets = await generateOrderReceiptAssets(order);
+
+        order.receiptImagePath = receiptAssets.publicRelativePath;
+        order.receiptImageUrl = receiptAssets.mediaUrl || "";
+        order.receiptGeneratedAt = new Date();
+        await order.save();
+
+        session.$locals.orderReceipt = {
+          orderId: order._id,
+          mediaUrl: receiptAssets.mediaUrl,
+          receiptImagePath: receiptAssets.publicRelativePath,
+        };
+      }
     } catch (receiptError) {
       console.error(
         `[OrderReceipt] Failed to generate receipt for order ${order._id}:`,
@@ -152,30 +271,43 @@ export const toolRegistry = {
       );
     }
 
-    // clear cart after successful order
     session.cart = [];
 
     return {
       success: true,
       orderId: order._id,
       total,
-      message: `Order placed successfully! Order ID: ${order._id}. Total: ₹${total}. Payment: ${paymentMethod.toUpperCase()}.${deliveryAddress ? ` Delivery address: ${deliveryAddress}.` : ""}`,
+      paymentLinkUrl,
+      message:
+        paymentMethod === "upi"
+          ? buildPendingUpiPaymentMessage({
+              orderId: order._id,
+              total,
+              paymentLinkUrl,
+            })
+          : buildOrderConfirmationMessage({
+              orderId: order._id,
+              total,
+              paymentMethod,
+              deliveryAddress,
+              paymentLinkUrl,
+            }),
     };
   },
 
   getCatalog: async (args, session) => {
     const products = await Product.find({
       org_id: session.organisationId,
-      quantity: { $gt: 0 }, // only in-stock items
+      quantity: { $gt: 0 },
     })
-      .select("name price quantity") // only fetch what the agent needs
+      .select("name price quantity")
       .lean();
 
     if (products.length === 0) {
       return { message: "No products currently in stock." };
     }
 
-    const catalog = products.map((p) => `- ${p.name} @ ₹${p.price}`).join("\n");
+    const catalog = products.map((p) => `- ${p.name} @ Rs${p.price}`).join("\n");
 
     return {
       count: products.length,

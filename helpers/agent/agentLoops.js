@@ -37,7 +37,7 @@ const logStep = (label, value) => {
  * @param {object} sop - merged shop SOP from getSopForShop()
  * @returns {string} - final reply text for Layer 5
  */
-export const runAgentLoop = async (session, transcript, sop) => {
+export const runAgentLoop = async (session, transcript, sop, paymentContext = {}) => {
   // append customer message to history
   session.history.push({
     role: "user",
@@ -49,7 +49,7 @@ export const runAgentLoop = async (session, transcript, sop) => {
   const buildMessages = () => [
     {
       role: "system",
-      content: buildBasePrompt(sop, session.cart),
+      content: buildBasePrompt(sop, session.cart, paymentContext),
     },
     ...session.history.map((msg) => {
       // strip out any keys the provider wrapper does not pass through

@@ -4,6 +4,23 @@ import Organisation from '../models/organisation.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import config from '../config/config.js';
 
+const sanitizeOrganisation = (org) => {
+  if (!org) return null;
+
+  return {
+    _id: org._id,
+    name: org.name,
+    gst: org.gst,
+    address: org.address,
+    phone: org.phone,
+    razorpay_key: org.razorpay_key || "",
+    has_razorpay_secret: Boolean(org.razorpay_secret),
+    has_razorpay_webhook_secret: Boolean(org.razorpay_webhook_secret),
+    createdAt: org.createdAt,
+    updatedAt: org.updatedAt,
+  };
+};
+
 export const register = async (req, res) => {
   try {
     const { email, password, name, phone } = req.body;
@@ -47,7 +64,16 @@ export const login = async (req, res) => {
     }
 
     res.cookie('refreshToken', refreshToken, config.COOKIE_OPTIONS);
-    res.json({ user: { id: user._id, email, name: user.name, org_id: user.org_id, org: org }, accessToken });
+    res.json({
+      user: {
+        id: user._id,
+        email,
+        name: user.name,
+        org_id: user.org_id,
+        org: sanitizeOrganisation(org),
+      },
+      accessToken,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

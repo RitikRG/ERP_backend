@@ -38,6 +38,11 @@ app.use(
 
 app.use("/api/agent", cors());
 
+app.use(
+  "/api/payments/razorpay/webhook",
+  bodyParser.raw({ type: "application/json" })
+);
+
 // Body Parser Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -59,6 +64,7 @@ import customerRoutes from "./routes/customers.js";
 import settingsRoutes from "./routes/settings.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import agentRoutes from "./routes/aiAgentRoutes.js";
+import paymentRoutes from "./routes/payments.js";
 import { startCronJobs } from "./helpers/cronJobs.js";
 
 // Use the auth routes for all requests starting with '/api/auth'
@@ -90,6 +96,9 @@ app.use("/api/settings", settingsRoutes);
 
 // Use the dashboard routes
 app.use("/api/dashboard", dashboardRoutes);
+
+// Payment/webhook routes
+app.use("/api/payments", paymentRoutes);
 
 // Ai Agent Routes
 app.use("/api/agent", agentRoutes);

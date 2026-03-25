@@ -91,7 +91,7 @@ export const toolDefinitions = [
     function: {
       name: "orderNow",
       description:
-        "Place the final order. Only call this after the customer has explicitly confirmed they want to place the order. Always call getCartSummary first and read it back to the customer before calling this. Include the delivery address when the order is for delivery, otherwise pass an empty string.",
+        "Place the final order. Only call this after the customer has explicitly confirmed they want to place the order. Always call getCartSummary first and read it back to the customer before calling this. If the customer wants online payment, pass paymentMethod as upi. Include the delivery address when the order is for delivery, otherwise pass an empty string.",
       parameters: {
         type: "object",
         properties: {
