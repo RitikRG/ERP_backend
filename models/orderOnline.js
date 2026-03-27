@@ -39,6 +39,11 @@ const onlineOrderSchema = new mongoose.Schema(
       enum: ["cod", "upi", "unknown"],
       default: "unknown",
     },
+    fulfillmentMode: {
+      type: String,
+      enum: ["delivery", "pickup", "unknown"],
+      default: "unknown",
+    },
     onlinePayment: {
       provider: { type: String, default: "" },
       linkId: { type: String, default: "" },

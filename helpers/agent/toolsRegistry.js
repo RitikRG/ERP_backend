@@ -3,6 +3,14 @@ import OnlineOrder from "../../models/orderOnline.js";
 import Organisation from "../../models/organisation.js";
 import { generateOrderReceiptAssets } from "../orders/orderReceipt.js";
 import { createUpiPaymentLink } from "../payments/razorpay.js";
+import {
+  applyResolvedChoice,
+  CHOICE_KEYS,
+  ensureCheckoutState,
+  invalidateCartConfirmations,
+  rememberDeliveryAddress,
+  rememberNotes,
+} from "./interactiveFlow.js";
 
 const PAYMENT_LINK_EXPIRY_HOURS = 2;
 
@@ -18,12 +26,14 @@ const buildOrderConfirmationMessage = ({
   orderId,
   total,
   paymentMethod,
+  fulfillmentMode,
   deliveryAddress,
   paymentLinkUrl = "",
 }) => {
   const lines = [
     `Order placed successfully! Order ID: ${orderId}.`,
     `Total: Rs${total}. Payment: ${paymentMethod.toUpperCase()}.`,
+    `Fulfillment: ${fulfillmentMode.toUpperCase()}.`,
   ];
 
   if (deliveryAddress) {
@@ -53,6 +63,8 @@ const buildPendingUpiPaymentMessage = ({
 export const toolRegistry = {
   checkAvailability: async (args, session) => {
     const { productName, quantity } = args;
+    ensureCheckoutState(session);
+    invalidateCartConfirmations(session);
 
     const product = await Product.findOne({
       org_id: session.organisationId,
@@ -88,6 +100,7 @@ export const toolRegistry = {
 
   addToCart: async (args, session) => {
     const { productId, productName, quantity, price } = args;
+    ensureCheckoutState(session);
 
     const existingIndex = session.cart.findIndex(
       (item) => item.productId.toString() === productId.toString()
@@ -98,6 +111,8 @@ export const toolRegistry = {
     } else {
       session.cart.push({ productId, productName, quantity, price });
     }
+
+    invalidateCartConfirmations(session);
 
     const total = session.cart.reduce(
       (sum, item) => sum + item.price * item.quantity,
@@ -138,17 +153,25 @@ export const toolRegistry = {
   },
 
   clearCart: async (args, session) => {
+    ensureCheckoutState(session);
     session.cart = [];
+    invalidateCartConfirmations(session);
     return { success: true, message: "Cart cleared." };
   },
 
   orderNow: async (args, session) => {
-    const { paymentMethod, notes, deliveryAddress } = args;
+    const {
+      paymentMethod,
+      notes,
+      fulfillmentMode,
+      deliveryAddress,
+    } = args;
 
     if (session.cart.length === 0) {
       return { success: false, message: "Cannot place order - cart is empty." };
     }
 
+    ensureCheckoutState(session);
     session.$locals = session.$locals || {};
     delete session.$locals.paymentLink;
     delete session.$locals.orderReceipt;
@@ -158,9 +181,20 @@ export const toolRegistry = {
       0
     );
 
+    const resolvedPaymentMethod =
+      paymentMethod ||
+      session.checkoutState.resolvedChoices.paymentMethod ||
+      "unknown";
+    const resolvedFulfillmentMode =
+      fulfillmentMode ||
+      session.checkoutState.resolvedChoices.fulfillmentMode ||
+      (deliveryAddress ? "delivery" : "pickup");
+    const normalizedDeliveryAddress =
+      resolvedFulfillmentMode === "delivery" ? deliveryAddress || "" : "";
+
     let org = null;
 
-    if (paymentMethod === "upi") {
+    if (resolvedPaymentMethod === "upi") {
       org = await Organisation.findById(session.organisationId).select(
         "razorpay_key razorpay_secret name"
       );
@@ -180,16 +214,17 @@ export const toolRegistry = {
       customerNumber: session.mobile_number,
       items: buildOnlineOrderItems(session.cart),
       total,
-      paymentMethod,
+      paymentMethod: resolvedPaymentMethod,
+      fulfillmentMode: resolvedFulfillmentMode,
       notes,
-      deliveryAddress,
+      deliveryAddress: normalizedDeliveryAddress,
       status: "pending",
     });
 
     let paymentLinkUrl = "";
 
     try {
-      if (paymentMethod === "upi") {
+      if (resolvedPaymentMethod === "upi") {
         const expiresAt = new Date(
           Date.now() + PAYMENT_LINK_EXPIRY_HOURS * 60 * 60 * 1000
         );
@@ -250,7 +285,7 @@ export const toolRegistry = {
     }
 
     try {
-      if (paymentMethod !== "upi") {
+      if (resolvedPaymentMethod !== "upi") {
         const receiptAssets = await generateOrderReceiptAssets(order);
 
         order.receiptImagePath = receiptAssets.publicRelativePath;
@@ -271,7 +306,17 @@ export const toolRegistry = {
       );
     }
 
+    rememberNotes(session, notes || "");
+    rememberDeliveryAddress(session, normalizedDeliveryAddress);
+    applyResolvedChoice(session, CHOICE_KEYS.PAYMENT_METHOD, resolvedPaymentMethod);
+    applyResolvedChoice(
+      session,
+      CHOICE_KEYS.FULFILLMENT_MODE,
+      resolvedFulfillmentMode
+    );
+    applyResolvedChoice(session, CHOICE_KEYS.ORDER_CONFIRMATION, "yes");
     session.cart = [];
+    session.checkoutState.resolvedChoices.cartConfirmed = null;
 
     return {
       success: true,
@@ -279,7 +324,7 @@ export const toolRegistry = {
       total,
       paymentLinkUrl,
       message:
-        paymentMethod === "upi"
+        resolvedPaymentMethod === "upi"
           ? buildPendingUpiPaymentMessage({
               orderId: order._id,
               total,
@@ -288,8 +333,9 @@ export const toolRegistry = {
           : buildOrderConfirmationMessage({
               orderId: order._id,
               total,
-              paymentMethod,
-              deliveryAddress,
+              paymentMethod: resolvedPaymentMethod,
+              fulfillmentMode: resolvedFulfillmentMode,
+              deliveryAddress: normalizedDeliveryAddress,
               paymentLinkUrl,
             }),
     };

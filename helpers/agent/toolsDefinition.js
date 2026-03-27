@@ -8,6 +8,66 @@ export const toolDefinitions = [
   {
     type: "function",
     function: {
+      name: "json",
+      description:
+        "Return the final customer-facing reply in structured JSON format. Use this only for the final reply, not for business actions.",
+      parameters: {
+        type: "object",
+        properties: {
+          type: {
+            type: "string",
+            enum: ["text", "buttons"],
+            description:
+              "Reply type. Use text for plain replies and buttons for fixed choices.",
+          },
+          message: {
+            type: "string",
+            description: "Customer-facing WhatsApp message.",
+          },
+          hint: {
+            type: "string",
+            description:
+              "Optional hint for the backend. Use catalog when sending the catalog.",
+          },
+          choiceKey: {
+            type: "string",
+            enum: [
+              "cart_confirmation",
+              "payment_method",
+              "fulfillment_mode",
+              "order_confirmation",
+            ],
+            description:
+              "Required for button replies. Identifies which choice is being collected.",
+          },
+          buttons: {
+            type: "array",
+            description:
+              "Required for button replies. Between 1 and 3 buttons with short labels and canonical values.",
+            items: {
+              type: "object",
+              properties: {
+                label: {
+                  type: "string",
+                  description: "Visible button label, maximum 20 characters.",
+                },
+                value: {
+                  type: "string",
+                  description:
+                    "Canonical value for the selected choice, such as yes, no, cod, upi, delivery, or pickup.",
+                },
+              },
+              required: ["label", "value"],
+            },
+          },
+        },
+        required: ["type", "message"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "checkAvailability",
       description:
         "Check if a product is in stock and get its current price. Always call this before addToCart. If the customer mentions any product, call this first.",
@@ -91,7 +151,7 @@ export const toolDefinitions = [
     function: {
       name: "orderNow",
       description:
-        "Place the final order. Only call this after the customer has explicitly confirmed they want to place the order. Always call getCartSummary first and read it back to the customer before calling this. If the customer wants online payment, pass paymentMethod as upi. Include the delivery address when the order is for delivery, otherwise pass an empty string.",
+        "Place the final order. Only call this after the customer has explicitly confirmed they want to place the order. Always call getCartSummary first and read it back to the customer before calling this. If the customer wants online payment, pass paymentMethod as upi. Pass fulfillmentMode as delivery or pickup. Include the delivery address only when fulfillmentMode is delivery, otherwise pass an empty string.",
       parameters: {
         type: "object",
         properties: {
@@ -105,13 +165,23 @@ export const toolDefinitions = [
             description:
               "Any special instructions from the customer. Empty string if none.",
           },
+          fulfillmentMode: {
+            type: "string",
+            enum: ["delivery", "pickup", "unknown"],
+            description: "Whether the order should be delivered or picked up.",
+          },
           deliveryAddress: {
             type: "string",
             description:
               "Full delivery address provided by the customer. Use empty string for pickup orders or when no address is needed.",
           },
         },
-        required: ["paymentMethod", "notes", "deliveryAddress"],
+        required: [
+          "paymentMethod",
+          "notes",
+          "fulfillmentMode",
+          "deliveryAddress",
+        ],
       },
     },
   },

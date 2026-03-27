@@ -3,8 +3,18 @@ import { buildBasePrompt } from "./basePrompt.js";
 import { toolDefinitions } from "./toolsDefinition.js";
 import { toolRegistry } from "./toolsRegistry.js";
 import { createChatResponse } from "./aiFunctions.js";
+import {
+  buildResolvedChoiceCorrection,
+  clearPendingChoice,
+  ensureCheckoutState,
+  isChoiceAlreadyResolved,
+  parseStructuredAgentReply,
+  recordPendingChoice,
+  syncExplicitChoiceMentions,
+} from "./interactiveFlow.js";
 
-const MAX_ITERATIONS = 5; // prevent infinite loops
+const MAX_ITERATIONS = 6;
+const MAX_FINAL_REPLY_REPAIRS = 2;
 
 const formatDebugValue = (value) =>
   typeof value === "string"
@@ -27,94 +37,180 @@ const logStep = (label, value) => {
   console.log(`[L3] ${label}:\n${formatDebugValue(value)}`);
 };
 
-/***
- * runAgentLoop
- * Core of Layer 3 — takes a session and transcript, runs the tool calling loop,
- * returns the final reply text to send to the customer
- *
- * @param {object} session - { customerNumber, organisationId, cart, history }
- * @param {string} transcript - plain text from Layer 2
- * @param {object} sop - merged shop SOP from getSopForShop()
- * @returns {string} - final reply text for Layer 5
- */
-export const runAgentLoop = async (session, transcript, sop, paymentContext = {}) => {
-  // append customer message to history
+const normalizeHistoryMessage = (msg) => {
+  if (msg.role === "user") {
+    return { role: "user", content: msg.content };
+  }
+
+  if (msg.role === "assistant") {
+    const clean = { role: "assistant", content: msg.content ?? null };
+    if (msg.tool_calls?.length > 0) {
+      clean.tool_calls = msg.tool_calls;
+    }
+    return clean;
+  }
+
+  if (msg.role === "tool") {
+    return {
+      role: "tool",
+      tool_call_id: msg.tool_call_id,
+      content: msg.content,
+    };
+  }
+
+  return msg;
+};
+
+const buildReplyRepairInstruction = (errors = []) =>
+  [
+    "Your previous reply did not follow the required JSON response format.",
+    ...errors,
+    'Respond again with valid JSON only using either {"type":"text","message":"..."} or the valid buttons format.',
+  ].join(" ");
+
+const tryReturnStructuredReply = ({
+  rawContent,
+  session,
+  finalReplyRepairs,
+  onRepairNeeded,
+}) => {
+  const parsedReply = parseStructuredAgentReply(rawContent);
+
+  if (!parsedReply.ok) {
+    if (finalReplyRepairs >= MAX_FINAL_REPLY_REPAIRS) {
+      const fallbackReply = {
+        type: "text",
+        message:
+          parsedReply.fallbackMessage ||
+          "Sorry, I am having trouble processing your request right now. Please try again.",
+      };
+
+      session.history.push({
+        role: "assistant",
+        content: JSON.stringify(fallbackReply),
+      });
+      clearPendingChoice(session);
+      return { done: true, reply: fallbackReply };
+    }
+
+    onRepairNeeded(buildReplyRepairInstruction(parsedReply.errors));
+    return { done: false, repaired: true };
+  }
+
+  if (
+    parsedReply.reply.type === "buttons" &&
+    isChoiceAlreadyResolved(session, parsedReply.reply.choiceKey)
+  ) {
+    if (finalReplyRepairs >= MAX_FINAL_REPLY_REPAIRS) {
+      const fallbackReply = {
+        type: "text",
+        message:
+          "I already have that choice noted. Please continue with the next step.",
+      };
+
+      session.history.push({
+        role: "assistant",
+        content: JSON.stringify(fallbackReply),
+      });
+      clearPendingChoice(session);
+      return { done: true, reply: fallbackReply };
+    }
+
+    onRepairNeeded(
+      buildResolvedChoiceCorrection(session, parsedReply.reply.choiceKey)
+    );
+    return { done: false, repaired: true };
+  }
+
+  session.history.push({
+    role: "assistant",
+    content: rawContent,
+  });
+
+  recordPendingChoice(session, parsedReply.reply);
+  return { done: true, reply: parsedReply.reply };
+};
+
+export const runAgentLoop = async (
+  session,
+  transcript,
+  sop,
+  paymentContext = {}
+) => {
+  ensureCheckoutState(session);
+  syncExplicitChoiceMentions(session, transcript);
+
   session.history.push({
     role: "user",
     content: transcript,
   });
 
-  // build messages array — system prompt + full history
-  // system prompt is rebuilt every turn so cart state is always fresh
-  const buildMessages = () => [
-    {
-      role: "system",
-      content: buildBasePrompt(sop, session.cart, paymentContext),
-    },
-    ...session.history.map((msg) => {
-      // strip out any keys the provider wrapper does not pass through
-      if (msg.role === "user") {
-        return { role: "user", content: msg.content };
-      }
-
-      if (msg.role === "assistant") {
-        const clean = { role: "assistant", content: msg.content ?? null };
-        // only include tool_calls if it actually exists and has items
-        if (msg.tool_calls?.length > 0) {
-          clean.tool_calls = msg.tool_calls;
-        }
-        return clean;
-      }
-
-      if (msg.role === "tool") {
-        return {
-          role: "tool",
-          tool_call_id: msg.tool_call_id,
-          content: msg.content,
-        };
-      }
-
-      return msg;
-    }),
-  ];
-
   let iterations = 0;
+  let finalReplyRepairs = 0;
+  let repairInstruction = "";
 
-  // the loop
+  const buildMessages = () => {
+    const messages = [
+      {
+        role: "system",
+        content: buildBasePrompt(sop, session.cart, paymentContext, session),
+      },
+    ];
+
+    if (repairInstruction) {
+      messages.push({
+        role: "system",
+        content: repairInstruction,
+      });
+    }
+
+    return [...messages, ...session.history.map(normalizeHistoryMessage)];
+  };
+
   while (iterations < MAX_ITERATIONS) {
     iterations++;
 
-    // call the LLM
     const messages = buildMessages();
-    const completionPayload = {
+    const { message, finishReason } = await createChatResponse({
       messages,
       tools: toolDefinitions,
-      tool_choice: "auto",
-    };
-
-    const { message, finishReason } = await createChatResponse({
-      model: completionPayload.model,
-      messages: completionPayload.messages,
-      tools: completionPayload.tools,
-      toolChoice: completionPayload.tool_choice,
+      toolChoice: "auto",
     });
 
-    // logStep("Parsed LLM message", message);
-    // logStep("finish_reason", finishReason);
-
-    // --- CASE 1: LLM wants to call tools ---
     if (finishReason === "tool_calls" && message.tool_calls?.length > 0) {
-      // append assistant message to history first — required before tool results
+      repairInstruction = "";
+
       session.history.push({
         role: "assistant",
         content: message.content ?? null,
         tool_calls: message.tool_calls,
       });
 
-      // execute each tool call
+      if (
+        message.tool_calls.length === 1 &&
+        message.tool_calls[0]?.function?.name === "json"
+      ) {
+        const jsonToolCall = message.tool_calls[0];
+        const structuredReplyResult = tryReturnStructuredReply({
+          rawContent: jsonToolCall.function.arguments,
+          session,
+          finalReplyRepairs,
+          onRepairNeeded: (instruction) => {
+            repairInstruction = instruction;
+            finalReplyRepairs++;
+          },
+        });
+
+        if (structuredReplyResult.done) {
+          return structuredReplyResult.reply;
+        }
+
+        continue;
+      }
+
       for (const toolCall of message.tool_calls) {
         const toolName = toolCall.function.name;
-        const toolArgs = JSON.parse(toolCall.function.arguments); // must parse — it's a JSON string
+        const toolArgs = JSON.parse(toolCall.function.arguments);
 
         logStep("Current tool call", toolCall);
         logStep(`Calling tool ${toolName} with args`, toolArgs);
@@ -131,7 +227,7 @@ export const runAgentLoop = async (session, transcript, sop, paymentContext = {}
           if (!fn) {
             toolResult = { error: `Tool ${toolName} not found.` };
           } else {
-            toolResult = await fn(toolArgs, session); // session passed so tools can mutate cart
+            toolResult = await fn(toolArgs, session);
           }
         } catch (err) {
           logStep(`Tool ${toolName} error object`, err);
@@ -141,47 +237,47 @@ export const runAgentLoop = async (session, transcript, sop, paymentContext = {}
         logStep(`Tool ${toolName} result`, toolResult);
         logStep(`Session after tool ${toolName}`, session);
 
-        // append tool result to history — must reference tool_call_id
         session.history.push({
           role: "tool",
-          tool_call_id: toolCall.id, // must match — LLM uses this to pair result to call
+          tool_call_id: toolCall.id,
           content: JSON.stringify(toolResult),
         });
-        logStep(
-          `History after appending tool result for ${toolName}`,
-          session.history
-        );
       }
 
-      // loop continues — LLM will now reason over tool results
-      logStep("Continuing loop after tool execution", {
-        iteration: iterations,
-        historyLength: session.history.length,
-      });
       continue;
     }
 
-    // --- CASE 2: LLM has a final text reply ---
     if (finishReason === "stop" && message.content) {
-      // append assistant reply to history for next turn's context
-      session.history.push({
-        role: "assistant",
-        content: message.content,
+      const structuredReplyResult = tryReturnStructuredReply({
+        rawContent: message.content,
+        session,
+        finalReplyRepairs,
+        onRepairNeeded: (instruction) => {
+          repairInstruction = instruction;
+          finalReplyRepairs++;
+        },
       });
 
-      logStep("History after appending final assistant reply", session.history);
-      logStep("Final reply", message.content);
-      return message.content;
+      if (structuredReplyResult.done) {
+        repairInstruction = "";
+        return structuredReplyResult.reply;
+      }
+
+      continue;
     }
 
-    // --- CASE 3: unexpected finish reason ---
     console.warn(`[L3] Unexpected finish_reason: ${finishReason}`);
     logStep("Unexpected finish reason message payload", message);
     break;
   }
 
-  // loop hit max iterations without a final reply — return fallback
-  console.error("[L3] Max iterations reached without final reply");
+  console.error("[L3] Max iterations reached without a final reply");
   logStep("Fallback return session snapshot", session);
-  return "Sorry, I'm having trouble processing your request right now. Please try again.";
+
+  clearPendingChoice(session);
+  return {
+    type: "text",
+    message:
+      "Sorry, I am having trouble processing your request right now. Please try again.",
+  };
 };
