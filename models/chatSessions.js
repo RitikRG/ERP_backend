@@ -50,6 +50,16 @@ const pendingChoiceSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const deliveryLocationSchema = new mongoose.Schema(
+  {
+    latitude: { type: Number, default: null },
+    longitude: { type: Number, default: null },
+    address: { type: String, default: "" },
+    label: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const checkoutStateSchema = new mongoose.Schema(
   {
     pendingChoice: {
@@ -61,6 +71,21 @@ const checkoutStateSchema = new mongoose.Schema(
       paymentMethod: { type: String, default: "" },
       fulfillmentMode: { type: String, default: "" },
       orderConfirmed: { type: Boolean, default: null },
+    },
+    awaitingDeliveryLocation: { type: Boolean, default: false },
+    deliveryCoverageStatus: {
+      type: String,
+      enum: ["unknown", "inside", "outside", "skipped"],
+      default: "unknown",
+    },
+    deliveryLocation: {
+      type: deliveryLocationSchema,
+      default: () => ({
+        latitude: null,
+        longitude: null,
+        address: "",
+        label: "",
+      }),
     },
     deliveryAddress: { type: String, default: "" },
     notes: { type: String, default: "" },
@@ -108,6 +133,14 @@ const chatSessionsSchema = new mongoose.Schema(
           paymentMethod: "",
           fulfillmentMode: "",
           orderConfirmed: null,
+        },
+        awaitingDeliveryLocation: false,
+        deliveryCoverageStatus: "unknown",
+        deliveryLocation: {
+          latitude: null,
+          longitude: null,
+          address: "",
+          label: "",
         },
         deliveryAddress: "",
         notes: "",

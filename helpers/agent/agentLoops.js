@@ -1,4 +1,3 @@
-import { inspect } from "node:util";
 import { buildBasePrompt } from "./basePrompt.js";
 import { toolDefinitions } from "./toolsDefinition.js";
 import { toolRegistry } from "./toolsRegistry.js";
@@ -15,27 +14,6 @@ import {
 
 const MAX_ITERATIONS = 6;
 const MAX_FINAL_REPLY_REPAIRS = 2;
-
-const formatDebugValue = (value) =>
-  typeof value === "string"
-    ? value
-    : inspect(value, {
-        depth: null,
-        colors: false,
-        compact: false,
-        breakLength: 120,
-        maxArrayLength: null,
-        maxStringLength: null,
-      });
-
-const logStep = (label, value) => {
-  if (value === undefined) {
-    console.log(`[L3] ${label}`);
-    return;
-  }
-
-  console.log(`[L3] ${label}:\n${formatDebugValue(value)}`);
-};
 
 const normalizeHistoryMessage = (msg) => {
   if (msg.role === "user") {
@@ -212,17 +190,10 @@ export const runAgentLoop = async (
         const toolName = toolCall.function.name;
         const toolArgs = JSON.parse(toolCall.function.arguments);
 
-        logStep("Current tool call", toolCall);
-        logStep(`Calling tool ${toolName} with args`, toolArgs);
-        logStep(`Session before tool ${toolName}`, session);
-
         let toolResult;
 
         try {
           const fn = toolRegistry[toolName];
-          logStep(`Resolved tool function for ${toolName}`, {
-            exists: Boolean(fn),
-          });
 
           if (!fn) {
             toolResult = { error: `Tool ${toolName} not found.` };
@@ -230,12 +201,8 @@ export const runAgentLoop = async (
             toolResult = await fn(toolArgs, session);
           }
         } catch (err) {
-          logStep(`Tool ${toolName} error object`, err);
           toolResult = { error: `Tool ${toolName} failed: ${err.message}` };
         }
-
-        logStep(`Tool ${toolName} result`, toolResult);
-        logStep(`Session after tool ${toolName}`, session);
 
         session.history.push({
           role: "tool",
@@ -266,13 +233,8 @@ export const runAgentLoop = async (
       continue;
     }
 
-    console.warn(`[L3] Unexpected finish_reason: ${finishReason}`);
-    logStep("Unexpected finish reason message payload", message);
     break;
   }
-
-  console.error("[L3] Max iterations reached without a final reply");
-  logStep("Fallback return session snapshot", session);
 
   clearPendingChoice(session);
   return {

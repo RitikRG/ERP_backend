@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test helpers/agent/interactiveFlow.test.js"
+    "test": "node --test helpers/agent/interactiveFlow.test.js helpers/agent/deliveryCoverage.test.js"
   },
   "keywords": [],
   "author": "",

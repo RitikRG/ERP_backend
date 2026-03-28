@@ -20,6 +20,38 @@ const normalizeText = (value) => String(value || "").trim();
 
 const normalizeKey = (value) => normalizeText(value).toLowerCase();
 
+const createEmptyDeliveryLocation = () => ({
+  latitude: null,
+  longitude: null,
+  address: "",
+  label: "",
+});
+
+export const markCheckoutStateModified = (session) => {
+  if (typeof session?.markModified === "function") {
+    session.markModified("checkoutState");
+  }
+};
+
+const setCheckoutStateValue = (session, path, value) => {
+  if (typeof session?.set === "function") {
+    session.set(`checkoutState.${path}`, value);
+    return;
+  }
+
+  const state = ensureCheckoutState(session);
+  const segments = String(path).split(".");
+  let target = state;
+
+  while (segments.length > 1) {
+    const segment = segments.shift();
+    target[segment] = target[segment] || {};
+    target = target[segment];
+  }
+
+  target[segments[0]] = value;
+};
+
 const normalizeChoiceValueFromLabel = (choiceKey, label) => {
   const normalized = normalizeKey(label);
 
@@ -91,6 +123,16 @@ export const ensureCheckoutState = (session) => {
   const state = session.checkoutState;
   state.pendingChoice = state.pendingChoice || null;
   state.resolvedChoices = state.resolvedChoices || {};
+  if (state.awaitingDeliveryLocation === undefined) {
+    state.awaitingDeliveryLocation = false;
+  }
+  if (!state.deliveryCoverageStatus) {
+    state.deliveryCoverageStatus = "unknown";
+  }
+  state.deliveryLocation = {
+    ...createEmptyDeliveryLocation(),
+    ...(state.deliveryLocation || {}),
+  };
   state.deliveryAddress = state.deliveryAddress || "";
   state.notes = state.notes || "";
 
@@ -113,23 +155,77 @@ export const ensureCheckoutState = (session) => {
   return state;
 };
 
+const isDeliveryZoneConfigured = (session) =>
+  Boolean(session?.$locals?.deliveryZoneConfigured);
+
+export const clearDeliveryLocation = (session, options = {}) => {
+  const state = ensureCheckoutState(session);
+  const shouldClearAddress = options.clearAddress !== false;
+
+  setCheckoutStateValue(session, "awaitingDeliveryLocation", false);
+  setCheckoutStateValue(session, "deliveryCoverageStatus", "unknown");
+  setCheckoutStateValue(session, "deliveryLocation", createEmptyDeliveryLocation());
+
+  if (shouldClearAddress) {
+    setCheckoutStateValue(session, "deliveryAddress", "");
+  }
+
+  markCheckoutStateModified(session);
+};
+
+export const setAwaitingDeliveryLocation = (session) => {
+  ensureCheckoutState(session);
+  setCheckoutStateValue(session, "awaitingDeliveryLocation", true);
+  setCheckoutStateValue(session, "deliveryCoverageStatus", "unknown");
+  setCheckoutStateValue(session, "deliveryLocation", createEmptyDeliveryLocation());
+  setCheckoutStateValue(session, "deliveryAddress", "");
+  markCheckoutStateModified(session);
+};
+
+export const markDeliveryCoverageSkipped = (session) => {
+  ensureCheckoutState(session);
+  setCheckoutStateValue(session, "awaitingDeliveryLocation", false);
+  setCheckoutStateValue(session, "deliveryCoverageStatus", "skipped");
+  markCheckoutStateModified(session);
+};
+
+export const rememberDeliveryLocation = (
+  session,
+  deliveryLocation,
+  coverageStatus = "inside"
+) => {
+  ensureCheckoutState(session);
+  setCheckoutStateValue(session, "deliveryLocation", {
+    ...createEmptyDeliveryLocation(),
+    ...(deliveryLocation || {}),
+  });
+  setCheckoutStateValue(session, "awaitingDeliveryLocation", false);
+  setCheckoutStateValue(session, "deliveryCoverageStatus", coverageStatus);
+  markCheckoutStateModified(session);
+};
+
 export const clearPendingChoice = (session) => {
   const state = ensureCheckoutState(session);
   state.pendingChoice = null;
+  markCheckoutStateModified(session);
 };
 
 export const rememberDeliveryAddress = (session, deliveryAddress) => {
   const state = ensureCheckoutState(session);
-  state.deliveryAddress = normalizeText(deliveryAddress);
+  const normalizedAddress = normalizeText(deliveryAddress);
+  setCheckoutStateValue(session, "deliveryAddress", normalizedAddress);
 
-  if (!state.deliveryAddress) {
-    state.resolvedChoices.fulfillmentMode = "pickup";
+  if (normalizedAddress) {
+    setCheckoutStateValue(session, "deliveryLocation.address", normalizedAddress);
   }
+
+  markCheckoutStateModified(session);
 };
 
 export const rememberNotes = (session, notes) => {
   const state = ensureCheckoutState(session);
   state.notes = normalizeText(notes);
+  markCheckoutStateModified(session);
 };
 
 export const invalidateOrderConfirmation = (session) => {
@@ -139,6 +235,8 @@ export const invalidateOrderConfirmation = (session) => {
   if (state.pendingChoice?.kind === CHOICE_KEYS.ORDER_CONFIRMATION) {
     state.pendingChoice = null;
   }
+
+  markCheckoutStateModified(session);
 };
 
 export const invalidateCartConfirmations = (session) => {
@@ -173,7 +271,17 @@ export const applyResolvedChoice = (session, choiceKey, value) => {
       }
 
       if (normalizedValue === "pickup") {
-        state.deliveryAddress = "";
+        clearDeliveryLocation(session);
+      } else if (normalizedValue === "delivery") {
+        if (isDeliveryZoneConfigured(session)) {
+          if (state.deliveryCoverageStatus !== "inside") {
+            setAwaitingDeliveryLocation(session);
+          } else {
+            state.awaitingDeliveryLocation = false;
+          }
+        } else {
+          markDeliveryCoverageSkipped(session);
+        }
       }
       break;
     case CHOICE_KEYS.ORDER_CONFIRMATION:
@@ -184,6 +292,7 @@ export const applyResolvedChoice = (session, choiceKey, value) => {
   }
 
   state.pendingChoice = null;
+  markCheckoutStateModified(session);
 };
 
 export const syncExplicitChoiceMentions = (session, transcript) => {
@@ -248,11 +357,21 @@ export const buildCheckoutStateContext = (session) => {
     `- Payment method already chosen: ${state.resolvedChoices.paymentMethod || "unknown"}`,
     `- Fulfillment mode already chosen: ${state.resolvedChoices.fulfillmentMode || "unknown"}`,
     `- Final order confirmation already chosen: ${orderConfirmed}`,
+    `- Awaiting customer current location: ${state.awaitingDeliveryLocation ? "yes" : "no"}`,
+    `- Delivery coverage status: ${state.deliveryCoverageStatus || "unknown"}`,
+    `- Known delivery location: ${
+      state.deliveryLocation.latitude !== null &&
+      state.deliveryLocation.longitude !== null
+        ? `${state.deliveryLocation.latitude}, ${state.deliveryLocation.longitude}`
+        : "unknown"
+    }`,
     `- Known delivery address: ${state.deliveryAddress || "unknown"}`,
     `- Known notes: ${state.notes || "none"}`,
     `- Pending choice awaiting reply: ${pendingChoice}`,
     "- If a choice is already known from checkout state, do not ask the same choice again unless the customer explicitly changes it.",
     "- If the customer selected a quick reply button, treat that as explicit confirmation for that exact choice.",
+    "- If fulfillment mode is delivery and checkout state says location is awaited, ask for the customer's current WhatsApp location instead of asking for a typed address.",
+    "- Ask for a typed delivery address only after location validation passes, or when delivery coverage is skipped because the shop has no configured delivery zone.",
   ].join("\n");
 };
 
@@ -475,6 +594,7 @@ export const recordPendingChoice = (session, reply) => {
 
   if (reply.type !== "buttons") {
     state.pendingChoice = null;
+    markCheckoutStateModified(session);
     return;
   }
 
@@ -484,6 +604,7 @@ export const recordPendingChoice = (session, reply) => {
     options: reply.buttons.map(cloneOption),
     askedAt: new Date(),
   };
+  markCheckoutStateModified(session);
 };
 
 export const resolveIncomingChoice = (session, inbound = {}) => {

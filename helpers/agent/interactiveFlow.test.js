@@ -4,12 +4,16 @@ import {
   applyResolvedChoice,
   buildChoiceSelectionTranscript,
   CHOICE_KEYS,
+  clearDeliveryLocation,
   ensureCheckoutState,
   invalidateCartConfirmations,
   isChoiceAlreadyResolved,
+  markDeliveryCoverageSkipped,
   parseStructuredAgentReply,
+  rememberDeliveryLocation,
   recordPendingChoice,
   resolveIncomingChoice,
+  setAwaitingDeliveryLocation,
   syncExplicitChoiceMentions,
 } from "./interactiveFlow.js";
 
@@ -21,6 +25,14 @@ const createSession = () => ({
       paymentMethod: "",
       fulfillmentMode: "",
       orderConfirmed: null,
+    },
+    awaitingDeliveryLocation: false,
+    deliveryCoverageStatus: "unknown",
+    deliveryLocation: {
+      latitude: null,
+      longitude: null,
+      address: "",
+      label: "",
     },
     deliveryAddress: "",
     notes: "",
@@ -159,4 +171,46 @@ test("syncExplicitChoiceMentions updates payment and fulfillment choices from te
   assert.equal(session.checkoutState.resolvedChoices.paymentMethod, "upi");
   assert.equal(session.checkoutState.resolvedChoices.fulfillmentMode, "pickup");
   assert.equal(session.checkoutState.resolvedChoices.orderConfirmed, null);
+});
+
+test("delivery choice waits for location when delivery zone is configured", () => {
+  const session = createSession();
+  session.$locals = { deliveryZoneConfigured: true };
+
+  applyResolvedChoice(session, CHOICE_KEYS.FULFILLMENT_MODE, "delivery");
+
+  assert.equal(session.checkoutState.awaitingDeliveryLocation, true);
+  assert.equal(session.checkoutState.deliveryCoverageStatus, "unknown");
+  assert.equal(session.checkoutState.deliveryAddress, "");
+});
+
+test("pickup clears stored delivery location state", () => {
+  const session = createSession();
+  rememberDeliveryLocation(
+    session,
+    {
+      latitude: 12.34,
+      longitude: 56.78,
+      address: "Test Address",
+      label: "Home",
+    },
+    "inside"
+  );
+  session.checkoutState.deliveryAddress = "Test Address";
+
+  applyResolvedChoice(session, CHOICE_KEYS.FULFILLMENT_MODE, "pickup");
+
+  assert.equal(session.checkoutState.awaitingDeliveryLocation, false);
+  assert.equal(session.checkoutState.deliveryCoverageStatus, "unknown");
+  assert.equal(session.checkoutState.deliveryLocation.latitude, null);
+  assert.equal(session.checkoutState.deliveryAddress, "");
+});
+
+test("delivery choice skips location wait when delivery zone is not configured", () => {
+  const session = createSession();
+
+  applyResolvedChoice(session, CHOICE_KEYS.FULFILLMENT_MODE, "delivery");
+
+  assert.equal(session.checkoutState.awaitingDeliveryLocation, false);
+  assert.equal(session.checkoutState.deliveryCoverageStatus, "skipped");
 });

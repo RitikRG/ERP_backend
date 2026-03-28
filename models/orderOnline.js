@@ -10,6 +10,16 @@ const onlineOrderItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const deliveryLocationSchema = new mongoose.Schema(
+  {
+    latitude: { type: Number, default: null },
+    longitude: { type: Number, default: null },
+    address: { type: String, default: "" },
+    label: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const onlineOrderSchema = new mongoose.Schema(
   {
     organisationId: {
@@ -65,6 +75,15 @@ const onlineOrderSchema = new mongoose.Schema(
     },
     notes: { type: String, default: "" }, // any special instructions from customer
     deliveryAddress: { type: String, default: "" },
+    deliveryLocation: {
+      type: deliveryLocationSchema,
+      default: () => ({
+        latitude: null,
+        longitude: null,
+        address: "",
+        label: "",
+      }),
+    },
     receiptImagePath: { type: String, default: "" },
     receiptImageUrl: { type: String, default: "" },
     receiptGeneratedAt: { type: Date, default: null },

@@ -9,6 +9,7 @@ import {
   ensureCheckoutState,
   invalidateCartConfirmations,
   rememberDeliveryAddress,
+  rememberDeliveryLocation,
   rememberNotes,
 } from "./interactiveFlow.js";
 
@@ -53,6 +54,26 @@ const buildPendingUpiPaymentMessage = ({
   paymentLinkUrl,
 }) =>
   `Please complete your UPI payment for Order ID: ${orderId}. Total: Rs${total}. Pay here: ${paymentLinkUrl} I will confirm your order once the payment is received.`;
+
+const getApprovedDeliveryLocation = (session) => {
+  const state = ensureCheckoutState(session);
+  const deliveryLocation = state.deliveryLocation || {};
+
+  if (
+    state.deliveryCoverageStatus !== "inside" ||
+    deliveryLocation.latitude === null ||
+    deliveryLocation.longitude === null
+  ) {
+    return null;
+  }
+
+  return {
+    latitude: deliveryLocation.latitude,
+    longitude: deliveryLocation.longitude,
+    address: deliveryLocation.address || "",
+    label: deliveryLocation.label || "",
+  };
+};
 
 /***
  * toolRegistry
@@ -189,8 +210,36 @@ export const toolRegistry = {
       fulfillmentMode ||
       session.checkoutState.resolvedChoices.fulfillmentMode ||
       (deliveryAddress ? "delivery" : "pickup");
+    const approvedDeliveryLocation = getApprovedDeliveryLocation(session);
     const normalizedDeliveryAddress =
-      resolvedFulfillmentMode === "delivery" ? deliveryAddress || "" : "";
+      resolvedFulfillmentMode === "delivery"
+        ? deliveryAddress ||
+          session.checkoutState.deliveryAddress ||
+          approvedDeliveryLocation?.address ||
+          approvedDeliveryLocation?.label ||
+          ""
+        : "";
+    const validationWasRequired =
+      resolvedFulfillmentMode === "delivery" &&
+      (session.checkoutState.awaitingDeliveryLocation ||
+        session.checkoutState.deliveryCoverageStatus === "inside" ||
+        session.checkoutState.deliveryCoverageStatus === "outside");
+
+    if (validationWasRequired && session.checkoutState.deliveryCoverageStatus !== "inside") {
+      return {
+        success: false,
+        deliveryUnavailable: true,
+        message:
+          "Please share your current location first so I can check if delivery is available there.",
+      };
+    }
+
+    if (resolvedFulfillmentMode === "delivery" && !normalizedDeliveryAddress) {
+      return {
+        success: false,
+        message: "Please share your delivery address before I place the order.",
+      };
+    }
 
     let org = null;
 
@@ -218,6 +267,10 @@ export const toolRegistry = {
       fulfillmentMode: resolvedFulfillmentMode,
       notes,
       deliveryAddress: normalizedDeliveryAddress,
+      deliveryLocation:
+        resolvedFulfillmentMode === "delivery" && approvedDeliveryLocation
+          ? approvedDeliveryLocation
+          : undefined,
       status: "pending",
     });
 
@@ -308,6 +361,9 @@ export const toolRegistry = {
 
     rememberNotes(session, notes || "");
     rememberDeliveryAddress(session, normalizedDeliveryAddress);
+    if (resolvedFulfillmentMode === "delivery" && approvedDeliveryLocation) {
+      rememberDeliveryLocation(session, approvedDeliveryLocation, "inside");
+    }
     applyResolvedChoice(session, CHOICE_KEYS.PAYMENT_METHOD, resolvedPaymentMethod);
     applyResolvedChoice(
       session,

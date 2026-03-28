@@ -6,6 +6,16 @@ const organisationSchema = new mongoose.Schema({
   gst: { type: String, required: true },
   address: { type: String, required: true },
   phone: { type: String },
+  shopLocation: {
+    latitude: {
+      type: Number,
+      default: null,
+    },
+    longitude: {
+      type: Number,
+      default: null,
+    },
+  },
   razorpay_key: {
     type: String,
     required: false,

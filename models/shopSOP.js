@@ -11,6 +11,7 @@ const sopSchema = new mongoose.Schema(
     delivery: {
       enabled: { type: Boolean, default: true },
       minimumOrder: { type: Number, default: 150 },
+      radiusKm: { type: Number, default: null },
       hoursStart: { type: String, default: "09:00" },
       hoursEnd: { type: String, default: "21:00" },
       days: { type: String, default: "Monday to Saturday" },

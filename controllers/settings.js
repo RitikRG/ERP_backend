@@ -9,10 +9,46 @@ const buildOrgSettingsResponse = (org) => ({
   gst: org.gst,
   phone: org.phone,
   address: org.address,
+  shopLocation: {
+    latitude: org.shopLocation?.latitude ?? null,
+    longitude: org.shopLocation?.longitude ?? null,
+  },
   razorpay_key: org.razorpay_key || "",
   has_razorpay_secret: Boolean(org.razorpay_secret),
   has_razorpay_webhook_secret: Boolean(org.razorpay_webhook_secret),
 });
+
+const buildShopLocationPayload = (shopLocation) => {
+  if (!shopLocation || typeof shopLocation !== "object") {
+    return {
+      latitude: null,
+      longitude: null,
+    };
+  }
+
+  const parseCoordinate = (value) => {
+    if (value === "" || value === undefined || value === null) {
+      return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  return {
+    latitude: parseCoordinate(shopLocation.latitude),
+    longitude: parseCoordinate(shopLocation.longitude),
+  };
+};
+
+const parseOptionalNumber = (value) => {
+  if (value === "" || value === undefined || value === null) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 // ==========================================================
 // USER SETTINGS
@@ -65,7 +101,7 @@ export const getOrgSettings = async (req, res) => {
     const { org_id } = req.params;
 
     const org = await Organization.findById(org_id).select(
-      "name gst phone address razorpay_key razorpay_secret razorpay_webhook_secret"
+      "name gst phone address shopLocation razorpay_key razorpay_secret razorpay_webhook_secret"
     );
 
     if (!org)
@@ -88,12 +124,20 @@ export const updateOrgSettings = async (req, res) => {
       gst,
       phone,
       address,
+      shopLocation,
       razorpay_key,
       razorpay_secret,
       razorpay_webhook_secret,
     } = req.body;
 
-    const updateData = { name, gst, phone, address, razorpay_key };
+    const updateData = {
+      name,
+      gst,
+      phone,
+      address,
+      shopLocation: buildShopLocationPayload(shopLocation),
+      razorpay_key,
+    };
 
     if (typeof razorpay_secret === "string" && razorpay_secret.trim() !== "") {
       updateData.razorpay_secret = razorpay_secret.trim();
@@ -113,7 +157,7 @@ export const updateOrgSettings = async (req, res) => {
         new: true,
       }
     ).select(
-      "name gst phone address razorpay_key razorpay_secret razorpay_webhook_secret"
+      "name gst phone address shopLocation razorpay_key razorpay_secret razorpay_webhook_secret"
     );
 
     res.json({
@@ -134,6 +178,7 @@ const buildSopPayload = (data = {}) => ({
   delivery: {
     enabled: data.delivery?.enabled ?? true,
     minimumOrder: Number(data.delivery?.minimumOrder ?? 150),
+    radiusKm: parseOptionalNumber(data.delivery?.radiusKm),
     hoursStart: data.delivery?.hoursStart || "09:00",
     hoursEnd: data.delivery?.hoursEnd || "21:00",
     days: data.delivery?.days || "Monday to Saturday",

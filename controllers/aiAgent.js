@@ -12,8 +12,27 @@ import {
 import { uploadAudioBuffer } from "../helpers/media/mediaAssets.js";
 import {
   buildChoiceSelectionTranscript,
+  clearDeliveryLocation,
+  ensureCheckoutState,
+  markCheckoutStateModified,
+  markDeliveryCoverageSkipped,
+  rememberDeliveryAddress,
+  rememberDeliveryLocation,
   resolveIncomingChoice,
 } from "../helpers/agent/interactiveFlow.js";
+import {
+  evaluateDeliveryCoverage,
+  hasDeliveryZoneConfig,
+  normalizeIncomingLocation,
+  resolveDeliveryAddressFromLocation,
+} from "../helpers/agent/deliveryCoverage.js";
+
+const DELIVERY_LOCATION_REQUEST_MESSAGE =
+  "Please share your current WhatsApp location so I can check if delivery is available there.";
+const DELIVERY_LOCATION_REMINDER_MESSAGE =
+  "Please share your current WhatsApp location to continue with delivery.";
+const DELIVERY_OUTSIDE_RADIUS_MESSAGE =
+  "Sorry, delivery is not available at your current location. If you want, reply pickup and I will continue with pickup instead.";
 
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -170,6 +189,13 @@ export const sendMessage = async (
 };
 
 export const resolveTranscript = async (payload) => {
+  if (payload.location) {
+    const addressText =
+      resolveDeliveryAddressFromLocation(payload.location) ||
+      `latitude ${payload.location.latitude}, longitude ${payload.location.longitude}`;
+    return `Customer shared a WhatsApp location: ${addressText}.`;
+  }
+
   if (payload.text) {
     console.log("[L2] Text message - passthrough");
     return payload.text;
@@ -204,6 +230,103 @@ const resolveInboundTranscript = async (reqBody, payload, session) => {
   return resolveTranscript(payload);
 };
 
+const isPickupSwitchRequest = (reqBody, payload) => {
+  const candidates = [
+    reqBody.ButtonPayload,
+    reqBody.ButtonText,
+    payload.text,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  return candidates.some(
+    (candidate) =>
+      candidate.includes("fulfillment_mode:pickup") ||
+      candidate.includes("pickup") ||
+      candidate.includes("pick up")
+  );
+};
+
+const buildApprovedDeliveryTranscript = (deliveryAddress) =>
+  deliveryAddress
+    ? `Customer shared current location. Delivery is available there. Saved delivery address: ${deliveryAddress}. Continue with the next checkout step.`
+    : "Customer shared current location. Delivery is available there, but the shared location did not include a usable address. Ask for the delivery address before final confirmation.";
+
+const handleDeliveryLocationGate = ({
+  reqBody,
+  payload,
+  session,
+  organisation,
+  sop,
+}) => {
+  const state = ensureCheckoutState(session);
+  const zoneConfigured = hasDeliveryZoneConfig(organisation, sop);
+
+  session.$locals = session.$locals || {};
+  session.$locals.deliveryZoneConfigured = zoneConfigured;
+
+  if (
+    state.resolvedChoices.fulfillmentMode === "delivery" &&
+    !zoneConfigured &&
+    state.deliveryCoverageStatus === "unknown"
+  ) {
+    markDeliveryCoverageSkipped(session);
+  }
+
+  if (payload.location && state.resolvedChoices.fulfillmentMode === "delivery") {
+    const coverage = evaluateDeliveryCoverage({
+      organisation,
+      sop,
+      customerLocation: payload.location,
+    });
+
+    if (!coverage.canValidate) {
+      markDeliveryCoverageSkipped(session);
+      return null;
+    }
+
+    if (!coverage.withinRadius) {
+      clearDeliveryLocation(session);
+      state.deliveryCoverageStatus = "outside";
+      state.resolvedChoices.fulfillmentMode = "";
+      markCheckoutStateModified(session);
+      return {
+        reply: {
+          type: "text",
+          message: DELIVERY_OUTSIDE_RADIUS_MESSAGE,
+        },
+      };
+    }
+
+    const deliveryAddress = resolveDeliveryAddressFromLocation(payload.location);
+    rememberDeliveryLocation(session, payload.location, "inside");
+    if (deliveryAddress) {
+      rememberDeliveryAddress(session, deliveryAddress);
+    }
+
+    return {
+      transcript: buildApprovedDeliveryTranscript(deliveryAddress),
+    };
+  }
+
+  if (
+    state.awaitingDeliveryLocation &&
+    !payload.location &&
+    !isPickupSwitchRequest(reqBody, payload)
+  ) {
+    return {
+      reply: {
+        type: "text",
+        message: state.deliveryLocation.latitude === null
+          ? DELIVERY_LOCATION_REQUEST_MESSAGE
+          : DELIVERY_LOCATION_REMINDER_MESSAGE,
+      },
+    };
+  }
+
+  return null;
+};
+
 export const recieveMessage = async (req, res) => {
   res.status(200).send();
 
@@ -217,6 +340,7 @@ export const recieveMessage = async (req, res) => {
       customerNumber: From,
       text: originalInputWasAudio ? null : Body,
       audioUrl: originalInputWasAudio ? MediaUrl0 : null,
+      location: normalizeIncomingLocation(req.body),
       originalInputWasAudio,
     };
 
@@ -231,6 +355,9 @@ export const recieveMessage = async (req, res) => {
     }
 
     const session = await getOrCreateSession(payload.customerNumber, org._id);
+    const sop = await getSopForShop(org._id, org);
+    session.$locals = session.$locals || {};
+    session.$locals.deliveryZoneConfigured = hasDeliveryZoneConfig(org, sop);
     const transcript = await resolveInboundTranscript(req.body, payload, session);
 
     if (transcript === "__UNCLEAR_AUDIO__") {
@@ -242,14 +369,37 @@ export const recieveMessage = async (req, res) => {
       return;
     }
 
-    const sop = await getSopForShop(org._id, org);
+    const deliveryGateResult = handleDeliveryLocationGate({
+      reqBody: req.body,
+      payload,
+      session,
+      organisation: org,
+      sop,
+    });
+
+    if (deliveryGateResult?.reply) {
+      session.lastActivityAt = new Date();
+      await session.save();
+      await sendMessage(
+        payload.customerNumber,
+        deliveryGateResult.reply,
+        payload.originalInputWasAudio
+      );
+      return;
+    }
+
     const paymentContext = {
       upiEnabled: Boolean(
         sop.payment.upi && org.razorpay_key && org.razorpay_secret
       ),
     };
 
-    const reply = await runAgentLoop(session, transcript, sop, paymentContext);
+    const reply = await runAgentLoop(
+      session,
+      deliveryGateResult?.transcript || transcript,
+      sop,
+      paymentContext
+    );
     const outboundReceipt = session.$locals?.orderReceipt ?? null;
     const outboundPaymentLink = session.$locals?.paymentLink?.shortUrl ?? "";
 
