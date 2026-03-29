@@ -129,10 +129,19 @@ export const ensureCheckoutState = (session) => {
   if (!state.deliveryCoverageStatus) {
     state.deliveryCoverageStatus = "unknown";
   }
-  state.deliveryLocation = {
-    ...createEmptyDeliveryLocation(),
-    ...(state.deliveryLocation || {}),
-  };
+  state.deliveryLocation = state.deliveryLocation || createEmptyDeliveryLocation();
+  if (state.deliveryLocation.latitude === undefined) {
+    state.deliveryLocation.latitude = null;
+  }
+  if (state.deliveryLocation.longitude === undefined) {
+    state.deliveryLocation.longitude = null;
+  }
+  if (state.deliveryLocation.address === undefined) {
+    state.deliveryLocation.address = "";
+  }
+  if (state.deliveryLocation.label === undefined) {
+    state.deliveryLocation.label = "";
+  }
   state.deliveryAddress = state.deliveryAddress || "";
   state.notes = state.notes || "";
 

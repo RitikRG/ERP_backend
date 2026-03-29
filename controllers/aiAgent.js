@@ -178,12 +178,17 @@ export const sendMessage = async (
 
     console.log(`[L5] Message sent to ${to}`);
   } catch (err) {
-    console.error("[L5] Message send failed, falling back to text:", err.message);
+    console.error(
+      "[L5] Message send failed, falling back to text:",
+      err.message
+    );
     await twilioClient.messages.create({
       from: `whatsapp:${process.env.TWILIO_SANDBOX_NUMBER}`,
       to,
       body:
-        reply.type === "buttons" ? buildQuickReplyFallbackText(reply) : replyText,
+        reply.type === "buttons"
+          ? buildQuickReplyFallbackText(reply)
+          : replyText,
     });
   }
 };
@@ -231,11 +236,7 @@ const resolveInboundTranscript = async (reqBody, payload, session) => {
 };
 
 const isPickupSwitchRequest = (reqBody, payload) => {
-  const candidates = [
-    reqBody.ButtonPayload,
-    reqBody.ButtonText,
-    payload.text,
-  ]
+  const candidates = [reqBody.ButtonPayload, reqBody.ButtonText, payload.text]
     .filter(Boolean)
     .map((value) => String(value).toLowerCase());
 
@@ -273,7 +274,10 @@ const handleDeliveryLocationGate = ({
     markDeliveryCoverageSkipped(session);
   }
 
-  if (payload.location && state.resolvedChoices.fulfillmentMode === "delivery") {
+  if (
+    payload.location &&
+    state.resolvedChoices.fulfillmentMode === "delivery"
+  ) {
     const coverage = evaluateDeliveryCoverage({
       organisation,
       sop,
@@ -298,7 +302,9 @@ const handleDeliveryLocationGate = ({
       };
     }
 
-    const deliveryAddress = resolveDeliveryAddressFromLocation(payload.location);
+    const deliveryAddress = resolveDeliveryAddressFromLocation(
+      payload.location
+    );
     rememberDeliveryLocation(session, payload.location, "inside");
     if (deliveryAddress) {
       rememberDeliveryAddress(session, deliveryAddress);
@@ -317,9 +323,10 @@ const handleDeliveryLocationGate = ({
     return {
       reply: {
         type: "text",
-        message: state.deliveryLocation.latitude === null
-          ? DELIVERY_LOCATION_REQUEST_MESSAGE
-          : DELIVERY_LOCATION_REMINDER_MESSAGE,
+        message:
+          state.deliveryLocation.latitude === null
+            ? DELIVERY_LOCATION_REQUEST_MESSAGE
+            : DELIVERY_LOCATION_REMINDER_MESSAGE,
       },
     };
   }
@@ -358,7 +365,11 @@ export const recieveMessage = async (req, res) => {
     const sop = await getSopForShop(org._id, org);
     session.$locals = session.$locals || {};
     session.$locals.deliveryZoneConfigured = hasDeliveryZoneConfig(org, sop);
-    const transcript = await resolveInboundTranscript(req.body, payload, session);
+    const transcript = await resolveInboundTranscript(
+      req.body,
+      payload,
+      session
+    );
 
     if (transcript === "__UNCLEAR_AUDIO__") {
       await sendMessage(
@@ -414,9 +425,14 @@ export const recieveMessage = async (req, res) => {
     session.lastActivityAt = new Date();
     await session.save();
 
-    await sendMessage(payload.customerNumber, reply, payload.originalInputWasAudio, {
-      mediaUrl: outboundReceipt?.mediaUrl,
-    });
+    await sendMessage(
+      payload.customerNumber,
+      reply,
+      payload.originalInputWasAudio,
+      {
+        mediaUrl: outboundReceipt?.mediaUrl,
+      }
+    );
   } catch (err) {
     console.error("Error in recieveMessage:", err.message);
   }

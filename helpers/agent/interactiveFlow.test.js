@@ -206,6 +206,30 @@ test("pickup clears stored delivery location state", () => {
   assert.equal(session.checkoutState.deliveryAddress, "");
 });
 
+test("ensureCheckoutState preserves remembered delivery location object", () => {
+  const session = createSession();
+
+  rememberDeliveryLocation(
+    session,
+    {
+      latitude: 28.6139,
+      longitude: 77.209,
+      address: "Connaught Place",
+      label: "Current location",
+    },
+    "inside"
+  );
+
+  const storedLocation = session.checkoutState.deliveryLocation;
+
+  ensureCheckoutState(session);
+
+  assert.equal(session.checkoutState.deliveryLocation, storedLocation);
+  assert.equal(session.checkoutState.deliveryLocation.latitude, 28.6139);
+  assert.equal(session.checkoutState.deliveryLocation.longitude, 77.209);
+  assert.equal(session.checkoutState.deliveryCoverageStatus, "inside");
+});
+
 test("delivery choice skips location wait when delivery zone is not configured", () => {
   const session = createSession();
 
