@@ -1,6 +1,9 @@
 import OnlineOrder from "../models/orderOnline.js";
+import User from "../models/user.js";
 import { createSaleFromOnlineOrder } from "../helpers/onlineOrders/salesFlow.js";
 import { addPaymentToSale } from "../helpers/sales/paymentFlow.js";
+import { populateOnlineOrderQuery } from "../helpers/onlineOrders/query.js";
+import { resetDeliveryAssignmentState } from "../helpers/delivery/deliveryFlow.js";
 
 const SALE_TRIGGER_STATUSES = new Set(["in-delivery", "ready-for-pickup"]);
 const ALLOWED_ORDER_STATUSES = [
@@ -16,6 +19,12 @@ const createHttpError = (statusCode, message) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+};
+
+const ensureOwnerOrganisationAccess = (req, organisationId) => {
+  if (!req.user || String(req.user.org_id) !== String(organisationId)) {
+    throw createHttpError(403, "Unauthorized: Org mismatch");
+  }
 };
 
 const parseFulfillmentPayment = (payment, sale) => {
@@ -88,14 +97,11 @@ export const getAllOnlineOrders = async (req, res) => {
       return res.status(400).json({ message: "Organisation ID is required." });
     }
 
-    const orders = await OnlineOrder.find({ organisationId })
-      .populate("items.productId", "name p_code")
-      .populate(
-        "saleId",
-        "sale_ref status final_amount paid_amount balance_amount payment_status"
-      )
-      .sort({ createdAt: -1 })
-      .lean();
+    ensureOwnerOrganisationAccess(req, organisationId);
+
+    const orders = await populateOnlineOrderQuery(
+      OnlineOrder.find({ organisationId }).sort({ createdAt: -1 })
+    ).lean();
 
     return res.status(200).json({
       message: "Online orders fetched successfully!",
@@ -103,8 +109,45 @@ export const getAllOnlineOrders = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching online orders:", error);
-    return res.status(500).json({
-      message: "Error fetching online orders",
+    return res.status(error.statusCode || 500).json({
+      message: error.message || "Error fetching online orders",
+      error,
+    });
+  }
+};
+
+export const getOnlineOrderTracking = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const organisationId = req.user?.org_id;
+
+    const order = await populateOnlineOrderQuery(
+      OnlineOrder.findOne({
+        _id: orderId,
+        organisationId,
+      })
+    ).lean();
+
+    if (!order) {
+      return res.status(404).json({ message: "Online order not found." });
+    }
+
+    return res.status(200).json({
+      tracking: {
+        _id: order._id,
+        status: order.status,
+        customerNumber: order.customerNumber,
+        deliveryAddress: order.deliveryAddress,
+        deliveryLocation: order.deliveryLocation,
+        assignedAgent: order.delivery?.assignedAgentId || null,
+        agentLiveLocation: order.delivery?.agentLiveLocation || null,
+        updatedAt: order.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching online order tracking:", error);
+    return res.status(error.statusCode || 500).json({
+      message: error.message || "Error fetching online order tracking",
       error,
     });
   }
@@ -120,6 +163,8 @@ export const updateOnlineOrderStatus = async (req, res) => {
         message: "Organisation ID and order ID are required.",
       });
     }
+
+    ensureOwnerOrganisationAccess(req, organisationId);
 
     if (!ALLOWED_ORDER_STATUSES.includes(status)) {
       return res.status(400).json({
@@ -138,6 +183,16 @@ export const updateOnlineOrderStatus = async (req, res) => {
 
     let sale = null;
     let saleCreated = false;
+
+    if (
+      status === "fulfilled" &&
+      order.delivery?.assignedAgentId &&
+      order.fulfillmentMode === "delivery"
+    ) {
+      return res.status(400).json({
+        message: "Assigned delivery orders must be completed by the assigned delivery agent.",
+      });
+    }
 
     if (SALE_TRIGGER_STATUSES.has(status) || status === "fulfilled") {
       const saleResult = await createSaleFromOnlineOrder(order);
@@ -179,13 +234,9 @@ export const updateOnlineOrderStatus = async (req, res) => {
 
     await order.save();
 
-    const updatedOrder = await OnlineOrder.findById(order._id)
-      .populate("items.productId", "name p_code")
-      .populate(
-        "saleId",
-        "sale_ref status final_amount paid_amount balance_amount payment_status"
-      )
-      .lean();
+    const updatedOrder = await populateOnlineOrderQuery(
+      OnlineOrder.findById(order._id)
+    ).lean();
 
     return res.status(200).json({
       message: "Online order status updated successfully.",
@@ -211,6 +262,83 @@ export const updateOnlineOrderStatus = async (req, res) => {
     return res.status(500).json({
       message: "Error updating online order status",
       error,
+    });
+  }
+};
+
+export const assignDeliveryAgent = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { agentId } = req.body;
+    const organisationId = req.user?.org_id;
+
+    if (!agentId) {
+      return res.status(400).json({ message: "Delivery agent is required." });
+    }
+
+    const agent = await User.findOne({
+      _id: agentId,
+      org_id: organisationId,
+      type: "delivery_agent",
+      isActive: true,
+    });
+
+    if (!agent) {
+      return res.status(404).json({ message: "Delivery agent not found." });
+    }
+
+    const order = await OnlineOrder.findOne({
+      _id: orderId,
+      organisationId,
+    });
+
+    if (!order) {
+      return res.status(404).json({ message: "Online order not found." });
+    }
+
+    if (order.fulfillmentMode !== "delivery") {
+      return res.status(400).json({
+        message: "Pickup orders cannot be assigned to delivery agents.",
+      });
+    }
+
+    if (["fulfilled", "cancelled"].includes(order.status)) {
+      return res.status(400).json({
+        message: "Delivered or cancelled orders cannot be reassigned.",
+      });
+    }
+
+    const saleResult = await createSaleFromOnlineOrder(order);
+    const sale = saleResult.sale;
+
+    order.status = "in-delivery";
+    order.delivery = {
+      ...resetDeliveryAssignmentState(order.delivery),
+      assignedAgentId: agent._id,
+      assignedByUserId: req.user._id,
+      assignedAt: new Date(),
+      completionProof: "otp",
+    };
+
+    if (sale && (!order.saleId || String(order.saleId) !== String(sale._id))) {
+      order.saleId = sale._id;
+    }
+
+    await order.save();
+
+    const updatedOrder = await populateOnlineOrderQuery(
+      OnlineOrder.findById(order._id)
+    ).lean();
+
+    return res.status(200).json({
+      message: "Delivery agent assigned successfully.",
+      order: updatedOrder,
+      saleCreated: saleResult.created,
+    });
+  } catch (error) {
+    console.error("Error assigning delivery agent:", error);
+    return res.status(error.statusCode || 500).json({
+      message: error.message || "Failed to assign delivery agent.",
     });
   }
 };

@@ -66,6 +66,48 @@ export const createUpiPaymentLink = async ({
   return data;
 };
 
+export const createRazorpayOrder = async ({
+  keyId,
+  keySecret,
+  amount,
+  receipt,
+  notes = {},
+}) => {
+  const payload = {
+    amount: Math.round(Number(amount) * 100),
+    currency: "INR",
+    receipt,
+    notes,
+  };
+
+  const response = await fetch(`${RAZORPAY_API_BASE}/orders`, {
+    method: "POST",
+    headers: {
+      Authorization:
+        "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64"),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const rawText = await response.text();
+  let data = {};
+
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    data = {};
+  }
+
+  if (!response.ok) {
+    const errorMessage =
+      data?.error?.description || data?.error?.reason || response.statusText;
+    throw new Error(`Razorpay order creation failed: ${errorMessage}`);
+  }
+
+  return data;
+};
+
 export const verifyRazorpayWebhookSignature = ({
   rawBody,
   signature,
@@ -88,4 +130,22 @@ export const verifyRazorpayWebhookSignature = ({
   }
 
   return crypto.timingSafeEqual(actual, expected);
+};
+
+export const verifyRazorpayPaymentSignature = ({
+  orderId,
+  paymentId,
+  signature,
+  secret,
+}) => {
+  if (!orderId || !paymentId || !signature || !secret) {
+    return false;
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", secret)
+    .update(`${orderId}|${paymentId}`)
+    .digest("hex");
+
+  return expectedSignature === signature;
 };

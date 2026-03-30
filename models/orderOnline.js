@@ -20,6 +20,53 @@ const deliveryLocationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const orderDeliverySchema = new mongoose.Schema(
+  {
+    agentLiveLocation: {
+      latitude: { type: Number, default: null },
+      longitude: { type: Number, default: null },
+      accuracy: { type: Number, default: null },
+      recordedAt: { type: Date, default: null },
+    },
+    assignedAgentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    assignedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    assignedAt: { type: Date, default: null },
+    otpHash: { type: String, default: "" },
+    otpSentAt: { type: Date, default: null },
+    otpExpiresAt: { type: Date, default: null },
+    otpVerifiedAt: { type: Date, default: null },
+    otpAttemptCount: { type: Number, default: 0 },
+    completedAt: { type: Date, default: null },
+    completedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    completionProof: {
+      type: String,
+      enum: ["otp"],
+      default: "otp",
+    },
+    settlementMode: {
+      type: String,
+      enum: ["none", "cash", "razorpay"],
+      default: "none",
+    },
+    settlementAmount: { type: Number, default: null },
+    settlementPaymentId: { type: String, default: "" },
+    settlementRazorpayOrderId: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const onlineOrderSchema = new mongoose.Schema(
   {
     organisationId: {
@@ -87,8 +134,40 @@ const onlineOrderSchema = new mongoose.Schema(
     receiptImagePath: { type: String, default: "" },
     receiptImageUrl: { type: String, default: "" },
     receiptGeneratedAt: { type: Date, default: null },
+    delivery: {
+      type: orderDeliverySchema,
+      default: () => ({
+        agentLiveLocation: {
+          latitude: null,
+          longitude: null,
+          accuracy: null,
+          recordedAt: null,
+        },
+        assignedAgentId: null,
+        assignedByUserId: null,
+        assignedAt: null,
+        otpHash: "",
+        otpSentAt: null,
+        otpExpiresAt: null,
+        otpVerifiedAt: null,
+        otpAttemptCount: 0,
+        completedAt: null,
+        completedByUserId: null,
+        completionProof: "otp",
+        settlementMode: "none",
+        settlementAmount: null,
+        settlementPaymentId: "",
+        settlementRazorpayOrderId: "",
+      }),
+    },
   },
   { timestamps: true }
 );
+
+onlineOrderSchema.index({
+  organisationId: 1,
+  status: 1,
+  "delivery.assignedAgentId": 1,
+});
 
 export default mongoose.model("OnlineOrder", onlineOrderSchema);

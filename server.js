@@ -65,6 +65,8 @@ import settingsRoutes from "./routes/settings.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import agentRoutes from "./routes/aiAgentRoutes.js";
 import paymentRoutes from "./routes/payments.js";
+import deliveryAgentRoutes from "./routes/deliveryAgents.js";
+import deliveryRoutes from "./routes/delivery.js";
 import { startCronJobs } from "./helpers/cronJobs.js";
 
 // Use the auth routes for all requests starting with '/api/auth'
@@ -81,6 +83,12 @@ app.use("/api/sale", saleRoutes);
 
 // Use the online order routes for all requests starting with '/api/online-orders'
 app.use("/api/online-orders", onlineOrderRoutes);
+
+// Use the delivery agent routes
+app.use("/api/delivery-agents", deliveryAgentRoutes);
+
+// Use the delivery routes
+app.use("/api/delivery", deliveryRoutes);
 
 // Use the supplier routes for all requests starting with '/api/supplier'
 app.use("/api/supplier", supplierRoutes);

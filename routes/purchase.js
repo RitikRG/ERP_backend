@@ -1,7 +1,10 @@
 import express from 'express';
 import { createPurchase, getAllPurchases, getPurchaseById, updatePurchaseStatus, addPurchasePayment } from '../controllers/purchase.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
+
+router.use(requireAuth, requireRole(['owner']));
 
 // Create a new purchase
 router.post('/', createPurchase);

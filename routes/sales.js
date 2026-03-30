@@ -6,8 +6,11 @@ import {
   deleteSale,
   getAllSales
 } from "../controllers/sales.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
+
+router.use(requireAuth, requireRole(["owner"]));
 
 // Get all sales
 router.get('/:org_id', getAllSales);

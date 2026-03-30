@@ -1,8 +1,11 @@
 import express from 'express';
 import * as supplierController from '../controllers/supplier.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 
 const router = express.Router();
+
+router.use(requireAuth, requireRole(['owner']));
 
 // R - GET all products
 router.get('/', supplierController.getSuppliers);

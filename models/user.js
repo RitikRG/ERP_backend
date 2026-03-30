@@ -7,12 +7,20 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   name: { type: String, required: true },
   phone: { type: String },
-  type: { type: String, default: 'owner' },
+  type: {
+    type: String,
+    enum: ['owner', 'delivery_agent'],
+    default: 'owner',
+  },
+  isActive: { type: Boolean, default: true },
+  lastLoginAt: { type: Date, default: null },
   currentRefreshToken: { type: String, default: null },
 }, { 
     timestamps: true,
     collection: 'Users'
 });
+
+userSchema.index({ org_id: 1, type: 1, isActive: 1 });
 
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();

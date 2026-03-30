@@ -2,8 +2,11 @@ import express from "express";
 import {
   getAllCustomers, getAllCustomersWithStats, editCustomer, getCustomerSalesDetails, createCustomer, getDueCustomers
 } from "../controllers/customers.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
+
+router.use(requireAuth, requireRole(["owner"]));
 
 // Get all customers
 router.get("/:org_id", getAllCustomers);

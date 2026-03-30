@@ -7,8 +7,11 @@ import {
   getSopSettings,
   updateSopSettings,
 } from "../controllers/settings.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
+
+router.use(requireAuth, requireRole(["owner"]));
 
 // ---- USER SETTINGS ----
 router.get("/user/:org_id", getUserSettings);

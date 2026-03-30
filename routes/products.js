@@ -2,8 +2,11 @@ import express from 'express';
 import * as productsController from '../controllers/products.js';
 import multer from 'multer';
 import path from 'path';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
+
+router.use(requireAuth, requireRole(['owner']));
 
 // R - GET all products
 router.get('/', productsController.getProducts);
