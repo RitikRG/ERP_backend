@@ -9,12 +9,13 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import config from "../config/config.js";
+import { setRefreshSession } from "./auth.js";
 
 // --- C: Create (POST /api/org/register) ------------------------------------------
 export const registerOrganisation = async (req, res, next) => {
   try {
     // Getting details from request body
-    const { name, gst, address, phone, contact_person_name, email, password } =
+    const { name, gst, address, phone, contact_person_name, email, password, deviceId, deviceLabel } =
       req.body;
 
     // Ensuring all the imp details are present
@@ -25,7 +26,8 @@ export const registerOrganisation = async (req, res, next) => {
       !phone ||
       !contact_person_name ||
       !email ||
-      !password
+      !password ||
+      !deviceId
     ) {
       return res.status(400).json({ message: "Missing required fields." });
     }
@@ -62,12 +64,7 @@ export const registerOrganisation = async (req, res, next) => {
     });
     await user.save();
 
-    const accessToken = signAccessToken({ sub: user._id });
-    const refreshToken = signRefreshToken({ sub: user._id });
-    user.currentRefreshToken = await bcrypt.hash(refreshToken, 10);
-    await user.save();
-
-    res.cookie("refreshToken", refreshToken, config.COOKIE_OPTIONS);
+    const accessToken = await setRefreshSession(res, user, deviceId, deviceLabel);
 
     res.status(201).json({
       message: "Organisation and admin user created successfully!",

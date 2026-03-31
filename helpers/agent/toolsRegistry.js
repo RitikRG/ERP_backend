@@ -12,6 +12,7 @@ import {
   rememberDeliveryLocation,
   rememberNotes,
 } from "./interactiveFlow.js";
+import { processNotificationEvent } from "../../services/notificationService.js";
 
 const PAYMENT_LINK_EXPIRY_HOURS = 2;
 
@@ -373,6 +374,17 @@ export const toolRegistry = {
     applyResolvedChoice(session, CHOICE_KEYS.ORDER_CONFIRMATION, "yes");
     session.cart = [];
     session.checkoutState.resolvedChoices.cartConfirmed = null;
+
+    processNotificationEvent({
+      type: 'online_order_created',
+      orgId: session.organisationId,
+      actorUserId: null,
+      targetRoles: ['owner'],
+      orderId: order._id,
+      title: 'New Online Order',
+      body: `Order #${String(order._id).slice(-6)} placed for Rs${total}`,
+      deeplink: `/online-orders/${order._id}`
+    });
 
     return {
       success: true,

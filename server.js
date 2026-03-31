@@ -37,7 +37,6 @@ app.use(
 );
 
 app.use("/api/agent", cors());
-
 app.use(
   "/api/payments/razorpay/webhook",
   bodyParser.raw({ type: "application/json" })
@@ -66,6 +65,7 @@ import dashboardRoutes from "./routes/dashboard.js";
 import agentRoutes from "./routes/aiAgentRoutes.js";
 import paymentRoutes from "./routes/payments.js";
 import deliveryAgentRoutes from "./routes/deliveryAgents.js";
+import notificationRoutes from "./routes/notifications.js";
 import deliveryRoutes from "./routes/delivery.js";
 import { startCronJobs } from "./helpers/cronJobs.js";
 
@@ -111,6 +111,9 @@ app.use("/api/payments", paymentRoutes);
 // Ai Agent Routes
 app.use("/api/agent", agentRoutes);
 
+// Notifications Routes
+app.use("/api/notifications", notificationRoutes);
+
 // public images
 app.use("/uploads", express.static("public/uploads"));
 
@@ -128,10 +131,14 @@ mongoose
     console.log("Connected to MongoDB!");
     startCronJobs();
     // Start the server ONLY after the database connection is successful
-    https.createServer({ key, cert }, app).listen(PORT, () => {
+    app.listen(PORT, () => {
       console.log(`✅ Secure server running at https://localhost:${PORT}`);
       console.log(`🌐 Accessible over LAN at https://192.168.46.16:${PORT}`);
     });
+    // https.createServer({ key, cert }, app).listen(PORT, () => {
+    //   console.log(`✅ Secure server running at https://localhost:${PORT}`);
+    //   console.log(`🌐 Accessible over LAN at https://192.168.46.16:${PORT}`);
+    // });
   })
   .catch((err) => {
     console.error("Could not connect to MongoDB:", err);

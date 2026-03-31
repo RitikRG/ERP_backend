@@ -1,4 +1,5 @@
 import User from "../models/user.js";
+import AuthSession from "../models/authSession.js";
 
 const sanitizeDeliveryAgent = (user) => ({
   _id: user._id,
@@ -94,7 +95,7 @@ export const updateDeliveryAgent = async (req, res) => {
     if (typeof isActive === "boolean") {
       agent.isActive = isActive;
       if (!isActive) {
-        agent.currentRefreshToken = null;
+        await AuthSession.updateMany({ user: agent._id }, { isActive: false, hashedRefreshToken: '' });
       }
     }
 

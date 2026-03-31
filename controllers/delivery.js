@@ -16,6 +16,7 @@ import {
   createRazorpayOrder,
   verifyRazorpayPaymentSignature,
 } from "../helpers/payments/razorpay.js";
+import { processNotificationEvent } from "../services/notificationService.js";
 
 const DELIVERY_HISTORY_STATUSES = ["fulfilled", "cancelled"];
 const DELIVERY_ACTIVE_STATUSES = ["in-delivery"];
@@ -154,6 +155,17 @@ export const sendDeliveryOtp = async (req, res) => {
       }),
       false
     );
+
+    processNotificationEvent({
+      type: 'delivery_otp_sent',
+      orgId: req.user.org_id,
+      actorUserId: req.user._id,
+      targetUserIds: [req.user._id],
+      orderId: order._id,
+      title: 'Delivery OTP Sent',
+      body: `OTP generated for Order #${String(order._id).slice(-6)}`,
+      deeplink: `/delivery/orders/${order._id}`
+    });
 
     return res.status(200).json({
       message: "Delivery OTP sent successfully.",
@@ -398,6 +410,18 @@ export const completeDeliveryOrder = async (req, res) => {
     const updatedOrder = await populateOnlineOrderQuery(
       OnlineOrder.findById(order._id)
     ).lean();
+
+    processNotificationEvent({
+      type: 'delivery_completed',
+      orgId: req.user.org_id,
+      actorUserId: req.user._id,
+      targetRoles: ['owner'],
+      targetUserIds: [req.user._id],
+      orderId: order._id,
+      title: 'Delivery Completed',
+      body: `Order #${String(order._id).slice(-6)} was successfully delivered.`,
+      deeplink: `/online-orders?orderId=${order._id}`
+    });
 
     return res.status(200).json({
       message: "Delivery completed successfully.",

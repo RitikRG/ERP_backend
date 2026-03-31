@@ -14,7 +14,6 @@ const userSchema = new mongoose.Schema({
   },
   isActive: { type: Boolean, default: true },
   lastLoginAt: { type: Date, default: null },
-  currentRefreshToken: { type: String, default: null },
 }, { 
     timestamps: true,
     collection: 'Users'

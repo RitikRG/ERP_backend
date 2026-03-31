@@ -4,6 +4,7 @@ import { createSaleFromOnlineOrder } from "../helpers/onlineOrders/salesFlow.js"
 import { addPaymentToSale } from "../helpers/sales/paymentFlow.js";
 import { populateOnlineOrderQuery } from "../helpers/onlineOrders/query.js";
 import { resetDeliveryAssignmentState } from "../helpers/delivery/deliveryFlow.js";
+import { processNotificationEvent } from "../services/notificationService.js";
 
 const SALE_TRIGGER_STATUSES = new Set(["in-delivery", "ready-for-pickup"]);
 const ALLOWED_ORDER_STATUSES = [
@@ -238,6 +239,24 @@ export const updateOnlineOrderStatus = async (req, res) => {
       OnlineOrder.findById(order._id)
     ).lean();
 
+    if (status === 'cancelled' || status === 'fulfilled') {
+      const type = status === 'cancelled' ? 'delivery_cancelled' : 'delivery_completed';
+      const targets = [req.user._id];
+      if (order.delivery?.assignedAgentId) targets.push(order.delivery.assignedAgentId);
+      
+      processNotificationEvent({
+        type,
+        orgId: organisationId,
+        actorUserId: req.user._id,
+        targetRoles: ['owner'],
+        targetUserIds: targets,
+        orderId: order._id,
+        title: status === 'cancelled' ? 'Order Cancelled' : 'Order Fulfilled',
+        body: `Order #${String(order._id).slice(-6)} status updated to ${status}.`,
+        deeplink: `/online-orders?orderId=${order._id}`
+      });
+    }
+
     return res.status(200).json({
       message: "Online order status updated successfully.",
       order: updatedOrder,
@@ -329,6 +348,17 @@ export const assignDeliveryAgent = async (req, res) => {
     const updatedOrder = await populateOnlineOrderQuery(
       OnlineOrder.findById(order._id)
     ).lean();
+
+    processNotificationEvent({
+      type: 'delivery_assigned',
+      orgId: organisationId,
+      actorUserId: req.user._id,
+      targetUserIds: [agentId],
+      orderId: order._id,
+      title: 'New Delivery Assigned',
+      body: `You have been assigned to deliver Order #${String(order._id).slice(-6)}.`,
+      deeplink: `/delivery/orders/${order._id}`
+    });
 
     return res.status(200).json({
       message: "Delivery agent assigned successfully.",
