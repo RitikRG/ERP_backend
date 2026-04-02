@@ -35,7 +35,7 @@ app.use(
       "https://192.168.194.16:4200",
       "https://192.168.194.16:57815",
       "https://db14-2409-40d0-3103-b7ee-e1c6-3d9e-b49f-9cd5.ngrok-free.app",
-      "https://rnr-erp.netlify.app/"
+      "https://rnr-erp.netlify.app"
     ],
     credentials: true,
   })
