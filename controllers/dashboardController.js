@@ -9,7 +9,7 @@ import Supplier from '../models/supplier.js';
 // ---------- DASHBOARD SUMMARY ----------
 export const getDashboardSummary = async (req, res) => {
   try {
-    const { org_id } = req.query;
+    const { org_id } = req. query;
 
     if (!org_id) {
       return res.status(400).json({ message: 'Organisation ID is required.' });

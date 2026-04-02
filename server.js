@@ -13,8 +13,8 @@ const cert = fs.readFileSync("./localhost+1.pem");
 
 // Database connection string
 // NOTE: For production, use environment variables for this!
-const DB_URL = process.env.MONGO_URI || "mongodb://localhost:27017/erp";
-const PORT = process.env.PORT || 3000;
+const DB_URL = config.MONGO_URI || "mongodb://localhost:27017/erp";
+const PORT = config.PORT;
 
 // Initialize Express App
 const app = express();
@@ -31,6 +31,11 @@ app.use(
       "https://192.168.46.16:4200",
       "http://192.168.191.16:4200",
       "https://192.168.191.16:4200",
+      "http://192.168.194.16:4200",
+      "https://192.168.194.16:4200",
+      "https://192.168.194.16:57815",
+      "https://db14-2409-40d0-3103-b7ee-e1c6-3d9e-b49f-9cd5.ngrok-free.app",
+      "https://rnr-erp.netlify.app/"
     ],
     credentials: true,
   })
@@ -123,6 +128,25 @@ app.get("/", (req, res) => {
   res.send("ERP Backend API is running!");
 });
 
+app.get("/test-db-connection", async (req,res)=>{
+  if(mongoose.connection.readyState === 1){
+    try {
+      const collections = await mongoose.connection.db.listCollections().toArray();
+      const counts = await Promise.all(
+        collections.map(async c => {
+          const count = await mongoose.connection.db.collection(c.name).countDocuments();
+          return `${c.name}: ${count}`;
+        })
+      );
+      res.send(`Database connection is successful!<br><br>Collections & Counts:<br>${counts.join('<br>')}`);
+    } catch (err) {
+      res.send(`Database connected, but error fetching collections: ${err.message}`);
+    }
+  }else{
+    res.send("Database connection is not successful!");
+  }
+})
+
 // --- 3. Database Connection ---
 
 mongoose
@@ -131,14 +155,14 @@ mongoose
     console.log("Connected to MongoDB!");
     startCronJobs();
     // Start the server ONLY after the database connection is successful
-    app.listen(PORT, () => {
-      console.log(`✅ Secure server running at https://localhost:${PORT}`);
-      console.log(`🌐 Accessible over LAN at https://192.168.46.16:${PORT}`);
-    });
     // https.createServer({ key, cert }, app).listen(PORT, () => {
     //   console.log(`✅ Secure server running at https://localhost:${PORT}`);
     //   console.log(`🌐 Accessible over LAN at https://192.168.46.16:${PORT}`);
     // });
+    app.listen(PORT, () => {
+      console.log(`✅ Secure server running at https://localhost:${PORT}`);
+      console.log(`🌐 Accessible over LAN at https://192.168.46.16:${PORT}`);
+    });
   })
   .catch((err) => {
     console.error("Could not connect to MongoDB:", err);
