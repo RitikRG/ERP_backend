@@ -384,8 +384,10 @@ export const toolRegistry = {
       actorUserId: null,
       targetRoles: ['owner'],
       orderId: order._id,
-      title: 'New Online Order',
-      body: `Order #${String(order._id).slice(-6)} placed for Rs${total}`,
+      templatePayload: {
+        orderShortId: String(order._id).slice(-6),
+        total,
+      },
       deeplink: buildOwnerOrderDeeplink(order._id)
     });
 

@@ -56,31 +56,30 @@ export const createOpenRouterChatResponse = async ({
   tools,
   toolChoice = "auto",
 }) => {
-  try {
-    const response = await getClient().chat.send({
-      chatGenerationParams: {
-        model: model || OPENROUTER_CHAT_MODEL,
-        messages: mapMessagesForOpenRouter(messages),
-        tools,
-        toolChoice,
-      },
-    });
+  const resolvedModel = model || OPENROUTER_CHAT_MODEL;
+  const response = await getClient().chat.send({
+    chatGenerationParams: {
+      model: resolvedModel,
+      messages: mapMessagesForOpenRouter(messages),
+      tools,
+      toolChoice,
+    },
+  });
 
-    console.log("OpenRouter raw response:", response);
-    const choice = response.choices?.[0];
+  const choice = response.choices?.[0];
 
-    if (!choice?.message) {
-      throw new Error("AI provider returned an empty chat response.");
-    }
-
-    return {
-      message: normalizeOpenRouterMessage(choice.message),
-      finishReason: choice.finishReason,
-      raw: response,
-    };
-  } catch (err) {
-    console.log(err);
+  if (!choice?.message) {
+    throw new Error("AI provider returned an empty chat response.");
   }
+
+  return {
+    message: normalizeOpenRouterMessage(choice.message),
+    finishReason: choice.finishReason,
+    provider: 'openrouter',
+    model: response.model || resolvedModel,
+    usage: response.usage || null,
+    raw: response,
+  };
 };
 
 export const transcribeOpenRouterAudioFile = async (args) =>

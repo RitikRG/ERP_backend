@@ -30,8 +30,9 @@ export const createGroqChatResponse = async ({
   tools,
   toolChoice = "auto",
 }) => {
+  const resolvedModel = model || GROQ_CHAT_MODEL;
   const response = await getClient().chat.completions.create({
-    model: model || GROQ_CHAT_MODEL,
+    model: resolvedModel,
     messages,
     tools,
     tool_choice: toolChoice,
@@ -46,6 +47,9 @@ export const createGroqChatResponse = async ({
   return {
     message: choice.message,
     finishReason: choice.finish_reason,
+    provider: 'groq',
+    model: response.model || resolvedModel,
+    usage: response.usage || null,
     raw: response,
   };
 };

@@ -26,6 +26,8 @@ import {
   normalizeIncomingLocation,
   resolveDeliveryAddressFromLocation,
 } from "../helpers/agent/deliveryCoverage.js";
+import { createAiTraceRecorder } from "../services/aiTraceService.js";
+import { recordAdminError } from "../services/adminErrorLogger.js";
 
 const DELIVERY_LOCATION_REQUEST_MESSAGE =
   "Please share your current WhatsApp location so I can check if delivery is available there.";
@@ -336,6 +338,8 @@ const handleDeliveryLocationGate = ({
 
 export const recieveMessage = async (req, res) => {
   res.status(200).send();
+  let traceRecorder = null;
+  let session = null;
 
   try {
     const { From, Body, To, NumMedia, MediaUrl0 } = req.body;
@@ -361,8 +365,16 @@ export const recieveMessage = async (req, res) => {
       return;
     }
 
-    const session = await getOrCreateSession(payload.customerNumber, org._id);
+    session = await getOrCreateSession(payload.customerNumber, org._id);
     const sop = await getSopForShop(org._id, org);
+    traceRecorder = await createAiTraceRecorder({
+      organisationId: org._id,
+      chatSessionId: session._id,
+      customerNumber: payload.customerNumber,
+      rawInboundPayload: req.body,
+      normalizedInboundPayload: payload,
+      session,
+    });
     session.$locals = session.$locals || {};
     session.$locals.deliveryZoneConfigured = hasDeliveryZoneConfig(org, sop);
     const transcript = await resolveInboundTranscript(
@@ -370,13 +382,24 @@ export const recieveMessage = async (req, res) => {
       payload,
       session
     );
+    await traceRecorder.recordTranscript(transcript);
 
     if (transcript === "__UNCLEAR_AUDIO__") {
+      const unclearAudioReply = {
+        type: "text",
+        message:
+          "Sorry, I couldn't hear that clearly. Could you type your order or send a clearer voice note?",
+      };
       await sendMessage(
         payload.customerNumber,
-        "Sorry, I couldn't hear that clearly. Could you type your order or send a clearer voice note?",
+        unclearAudioReply,
         originalInputWasAudio
       );
+      await traceRecorder.complete({
+        session,
+        outboundReply: unclearAudioReply,
+        outboundTransport: {},
+      });
       return;
     }
 
@@ -396,6 +419,11 @@ export const recieveMessage = async (req, res) => {
         deliveryGateResult.reply,
         payload.originalInputWasAudio
       );
+      await traceRecorder.complete({
+        session,
+        outboundReply: deliveryGateResult.reply,
+        outboundTransport: {},
+      });
       return;
     }
 
@@ -409,7 +437,8 @@ export const recieveMessage = async (req, res) => {
       session,
       deliveryGateResult?.transcript || transcript,
       sop,
-      paymentContext
+      paymentContext,
+      traceRecorder
     );
     const outboundReceipt = session.$locals?.orderReceipt ?? null;
     const outboundPaymentLink = session.$locals?.paymentLink?.shortUrl ?? "";
@@ -433,7 +462,38 @@ export const recieveMessage = async (req, res) => {
         mediaUrl: outboundReceipt?.mediaUrl,
       }
     );
+    await traceRecorder.complete({
+      session,
+      outboundReply: reply,
+      outboundTransport: {
+        mediaUrl: outboundReceipt?.mediaUrl || "",
+        paymentLink: outboundPaymentLink,
+      },
+      finishReason: reply?._traceMeta?.finishReason || "",
+      provider: reply?._traceMeta?.provider || "",
+      model: reply?._traceMeta?.model || "",
+      usage: reply?._traceMeta?.usage || null,
+      latencyMs: reply?._traceMeta?.latencyMs ?? null,
+    });
   } catch (err) {
+    const errorLog = await recordAdminError({
+      error: err,
+      source: "aiAgent.receiveMessage",
+      action: "receive_whatsapp_message",
+      req,
+      orgId: session?.organisationId || null,
+      chatSessionId: session?._id || null,
+      traceConversationId: traceRecorder?.conversationId || null,
+      traceTurnId: traceRecorder?.turnId || null,
+      metadata: {
+        customerNumber: req.body?.From || "",
+      },
+    });
+
+    await traceRecorder?.fail({
+      session,
+      errorLogId: errorLog?._id || null,
+    });
     console.error("Error in recieveMessage:", err.message);
   }
 };

@@ -122,8 +122,9 @@ export const createOpenAIChatResponse = async ({
   tools,
   toolChoice = "auto",
 }) => {
+  const resolvedModel = model || process.env.OPENAI_CHAT_MODEL || OPENAI_CHAT_MODEL;
   const response = await openAIJsonRequest("/chat/completions", {
-    model: model || process.env.OPENAI_CHAT_MODEL || OPENAI_CHAT_MODEL,
+    model: resolvedModel,
     messages,
     tools,
     tool_choice: toolChoice,
@@ -138,6 +139,9 @@ export const createOpenAIChatResponse = async ({
   return {
     message: choice.message,
     finishReason: choice.finish_reason,
+    provider: 'open_ai',
+    model: response.model || resolvedModel,
+    usage: response.usage || null,
     raw: response,
   };
 };

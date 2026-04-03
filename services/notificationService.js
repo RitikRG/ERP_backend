@@ -3,6 +3,7 @@ import NotificationEvent from '../models/notificationEvent.js';
 import NotificationDelivery from '../models/notificationDelivery.js';
 import PushSubscription from '../models/pushSubscription.js';
 import User from '../models/user.js';
+import { renderNotificationTemplate } from './notificationTemplateService.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -73,10 +74,11 @@ export const processNotificationEvent = async (params) => {
       targetRoles,     // Array of roles to broadcast to (e.g., ["owner"])
       orderId, 
       saleId, 
-      title, 
-      body, 
+      title,
+      body,
       deeplink, 
-      payloadSnapshot 
+      payloadSnapshot,
+      templatePayload,
     } = params;
 
     // Resolve audience users
@@ -91,6 +93,13 @@ export const processNotificationEvent = async (params) => {
     
     if (audienceArray.length === 0) return; // No one to notify
 
+    const rendered = title && body
+      ? { title, body, payload: payloadSnapshot || templatePayload || {} }
+      : await renderNotificationTemplate({
+          type,
+          payload: templatePayload || payloadSnapshot || {},
+        });
+
     // 1. Create the Event
     const event = await NotificationEvent.create({
       type,
@@ -100,10 +109,10 @@ export const processNotificationEvent = async (params) => {
       audienceUsers: audienceArray,
       orderId,
       saleId,
-      title,
-      body,
+      title: rendered.title,
+      body: rendered.body,
       deeplink,
-      payloadSnapshot
+      payloadSnapshot: rendered.payload
     });
 
     // 2. Create in-app deliveries for all targeted users
@@ -137,8 +146,8 @@ export const processNotificationEvent = async (params) => {
     // 5. Send pushes via web-push
     const pushPayload = JSON.stringify({
       notification: {
-        title,
-        body,
+        title: rendered.title,
+        body: rendered.body,
         data: buildPushNotificationData({
           eventId: event._id,
           type,

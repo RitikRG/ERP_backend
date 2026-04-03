@@ -113,7 +113,8 @@ export const runAgentLoop = async (
   session,
   transcript,
   sop,
-  paymentContext = {}
+  paymentContext = {},
+  traceRecorder = null
 ) => {
   ensureCheckoutState(session);
   syncExplicitChoiceMentions(session, transcript);
@@ -126,6 +127,13 @@ export const runAgentLoop = async (
   let iterations = 0;
   let finalReplyRepairs = 0;
   let repairInstruction = "";
+  let lastTraceMeta = {
+    provider: "",
+    model: "",
+    usage: null,
+    finishReason: "",
+    latencyMs: null,
+  };
 
   const buildMessages = () => {
     const messages = [
@@ -149,11 +157,34 @@ export const runAgentLoop = async (
     iterations++;
 
     const messages = buildMessages();
-    const { message, finishReason } = await createChatResponse({
+    await traceRecorder?.recordRequestMessages(messages);
+
+    const startedAt = Date.now();
+    const response = await createChatResponse({
       messages,
       tools: toolDefinitions,
       toolChoice: "auto",
     });
+    const { message, finishReason } = response;
+    const iterationDetails = {
+      iteration: iterations,
+      requestMessages: messages,
+      repairInstruction: repairInstruction || "",
+      assistantMessage: message,
+      finishReason,
+      provider: response.provider || "",
+      model: response.model || "",
+      usage: response.usage || null,
+      latencyMs: Date.now() - startedAt,
+      toolExecutions: [],
+    };
+    lastTraceMeta = {
+      provider: response.provider || "",
+      model: response.model || "",
+      usage: response.usage || null,
+      finishReason: finishReason || "",
+      latencyMs: iterationDetails.latencyMs,
+    };
 
     if (finishReason === "tool_calls" && message.tool_calls?.length > 0) {
       repairInstruction = "";
@@ -178,10 +209,16 @@ export const runAgentLoop = async (
             finalReplyRepairs++;
           },
         });
+        await traceRecorder?.recordIteration(iterationDetails);
 
         if (structuredReplyResult.done) {
-          return structuredReplyResult.reply;
+          return {
+            ...structuredReplyResult.reply,
+            _traceMeta: lastTraceMeta,
+          };
         }
+
+        await traceRecorder?.addRepairInstruction(repairInstruction);
 
         continue;
       }
@@ -209,7 +246,16 @@ export const runAgentLoop = async (
           tool_call_id: toolCall.id,
           content: JSON.stringify(toolResult),
         });
+
+        iterationDetails.toolExecutions.push({
+          toolCallId: toolCall.id,
+          toolName,
+          toolArgs,
+          toolResult,
+        });
       }
+
+      await traceRecorder?.recordIteration(iterationDetails);
 
       continue;
     }
@@ -224,14 +270,22 @@ export const runAgentLoop = async (
           finalReplyRepairs++;
         },
       });
+      await traceRecorder?.recordIteration(iterationDetails);
 
       if (structuredReplyResult.done) {
         repairInstruction = "";
-        return structuredReplyResult.reply;
+        return {
+          ...structuredReplyResult.reply,
+          _traceMeta: lastTraceMeta,
+        };
       }
+
+      await traceRecorder?.addRepairInstruction(repairInstruction);
 
       continue;
     }
+
+    await traceRecorder?.recordIteration(iterationDetails);
 
     break;
   }
@@ -241,5 +295,6 @@ export const runAgentLoop = async (
     type: "text",
     message:
       "Sorry, I am having trouble processing your request right now. Please try again.",
+    _traceMeta: lastTraceMeta,
   };
 };

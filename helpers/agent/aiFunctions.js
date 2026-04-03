@@ -33,31 +33,22 @@ export const createChatResponse = async ({
   toolChoice = "auto",
 }) => {
   const provider = getProvider();
+  const request = {
+    model,
+    messages,
+    tools,
+    toolChoice,
+  };
 
   switch (provider) {
     case OPENAI_PROVIDER: {
-      return createOpenAIChatResponse({
-        model,
-        messages,
-        tools,
-        toolChoice,
-      });
+      return createOpenAIChatResponse(request);
     }
     case GROQ_PROVIDER: {
-      return createGroqChatResponse({
-        model,
-        messages,
-        tools,
-        toolChoice,
-      });
+      return createGroqChatResponse(request);
     }
     case OPENROUTER_PROVIDER: {
-      return createOpenRouterChatResponse({
-        model,
-        messages,
-        tools,
-        toolChoice,
-      });
+      return createOpenRouterChatResponse(request);
     }
     default:
       throw new Error(`Unsupported AI provider: ${provider}`);

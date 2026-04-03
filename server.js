@@ -71,8 +71,15 @@ import agentRoutes from "./routes/aiAgentRoutes.js";
 import paymentRoutes from "./routes/payments.js";
 import deliveryAgentRoutes from "./routes/deliveryAgents.js";
 import notificationRoutes from "./routes/notifications.js";
+import adminAuthRoutes from "./routes/adminAuth.js";
+import adminRoutes from "./routes/admin.js";
 import deliveryRoutes from "./routes/delivery.js";
 import { startCronJobs } from "./helpers/cronJobs.js";
+import { ensureNotificationTemplatesSeeded } from "./services/notificationTemplateService.js";
+import { ensureSeedAdminUser } from "./services/adminBootstrapService.js";
+import { installAdminErrorCapture } from "./services/adminErrorLogger.js";
+
+installAdminErrorCapture();
 
 // Use the auth routes for all requests starting with '/api/auth'
 app.use("/api/auth", authRoutes);
@@ -119,6 +126,10 @@ app.use("/api/agent", agentRoutes);
 // Notifications Routes
 app.use("/api/notifications", notificationRoutes);
 
+// Admin auth and admin routes
+app.use("/api/admin/auth", adminAuthRoutes);
+app.use("/api/admin", adminRoutes);
+
 // public images
 app.use("/uploads", express.static("public/uploads"));
 
@@ -151,8 +162,10 @@ app.get("/test-db-connection", async (req,res)=>{
 
 mongoose
   .connect(DB_URL)
-  .then(() => {
+  .then(async () => {
     console.log("Connected to MongoDB!");
+    await ensureNotificationTemplatesSeeded();
+    await ensureSeedAdminUser();
     startCronJobs();
     // Start the server ONLY after the database connection is successful
     // https.createServer({ key, cert }, app).listen(PORT, () => {

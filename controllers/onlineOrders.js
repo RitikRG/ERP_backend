@@ -245,6 +245,10 @@ export const updateOnlineOrderStatus = async (req, res) => {
 
     if (status === 'cancelled' || status === 'fulfilled') {
       const type = status === 'cancelled' ? 'delivery_cancelled' : 'delivery_completed';
+      const templatePayload = {
+        orderShortId: String(order._id).slice(-6),
+        status,
+      };
 
       processNotificationEvent({
         type,
@@ -252,8 +256,7 @@ export const updateOnlineOrderStatus = async (req, res) => {
         actorUserId: req.user._id,
         targetRoles: ['owner'],
         orderId: order._id,
-        title: status === 'cancelled' ? 'Order Cancelled' : 'Order Fulfilled',
-        body: `Order #${String(order._id).slice(-6)} status updated to ${status}.`,
+        templatePayload,
         deeplink: buildOwnerOrderDeeplink(order._id)
       });
 
@@ -264,8 +267,7 @@ export const updateOnlineOrderStatus = async (req, res) => {
           actorUserId: req.user._id,
           targetUserIds: [order.delivery.assignedAgentId],
           orderId: order._id,
-          title: status === 'cancelled' ? 'Order Cancelled' : 'Order Fulfilled',
-          body: `Order #${String(order._id).slice(-6)} status updated to ${status}.`,
+          templatePayload,
           deeplink: buildDeliveryOrderDeeplink(
             order._id,
             status === 'cancelled' || status === 'fulfilled' ? 'history' : 'active'
@@ -372,8 +374,10 @@ export const assignDeliveryAgent = async (req, res) => {
       actorUserId: req.user._id,
       targetUserIds: [agentId],
       orderId: order._id,
-      title: 'New Delivery Assigned',
-      body: `You have been assigned to deliver Order #${String(order._id).slice(-6)}.`,
+      templatePayload: {
+        orderShortId: String(order._id).slice(-6),
+        agentName: agent.name || '',
+      },
       deeplink: buildDeliveryOrderDeeplink(order._id)
     });
 

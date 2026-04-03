@@ -166,8 +166,9 @@ export const sendDeliveryOtp = async (req, res) => {
       actorUserId: req.user._id,
       targetUserIds: [req.user._id],
       orderId: order._id,
-      title: 'Delivery OTP Sent',
-      body: `OTP generated for Order #${String(order._id).slice(-6)}`,
+      templatePayload: {
+        orderShortId: String(order._id).slice(-6),
+      },
       deeplink: buildDeliveryOrderDeeplink(order._id)
     });
 
@@ -421,8 +422,10 @@ export const completeDeliveryOrder = async (req, res) => {
       actorUserId: req.user._id,
       targetRoles: ['owner'],
       orderId: order._id,
-      title: 'Delivery Completed',
-      body: `Order #${String(order._id).slice(-6)} was successfully delivered.`,
+      templatePayload: {
+        orderShortId: String(order._id).slice(-6),
+        status: 'fulfilled',
+      },
       deeplink: buildOwnerOrderDeeplink(order._id)
     });
 
@@ -432,8 +435,10 @@ export const completeDeliveryOrder = async (req, res) => {
       actorUserId: req.user._id,
       targetUserIds: [req.user._id],
       orderId: order._id,
-      title: 'Delivery Completed',
-      body: `Order #${String(order._id).slice(-6)} was successfully delivered.`,
+      templatePayload: {
+        orderShortId: String(order._id).slice(-6),
+        status: 'fulfilled',
+      },
       deeplink: buildDeliveryOrderDeeplink(order._id, 'history')
     });
 
