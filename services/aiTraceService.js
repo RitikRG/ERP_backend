@@ -28,13 +28,11 @@ const upsertConversationTrace = async ({ organisationId, chatSessionId, customer
     { chatSessionId },
     {
       $setOnInsert: {
-        organisationId,
-        chatSessionId,
-        customerNumber,
         startedAt: new Date(),
       },
       $set: {
         organisationId,
+        chatSessionId,
         customerNumber,
         lastTurnAt: new Date(),
       },

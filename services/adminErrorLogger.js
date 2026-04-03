@@ -1,5 +1,8 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import mongoose from 'mongoose';
 import AdminErrorLog from '../models/adminErrorLog.js';
+
+const requestContextStore = new AsyncLocalStorage();
 
 const SENSITIVE_KEY_PATTERN =
   /(password|token|secret|cookie|authorization|api[-_]?key|signature|hashedrefreshtoken)/i;
@@ -10,6 +13,34 @@ const toPlainObject = (value) => {
     return value.toObject({ depopulate: true });
   }
   return value;
+};
+
+const getRequestContext = () => requestContextStore.getStore()?.req || null;
+
+const getRouteSignature = (req) => {
+  if (!req) return '';
+
+  const routePath = req.route?.path;
+  if (routePath) {
+    return `${req.baseUrl || ''}${routePath}`;
+  }
+
+  return req.originalUrl || '';
+};
+
+const markRequestAsLogged = (req) => {
+  if (!req) return;
+  req.__adminErrorLogCount = (req.__adminErrorLogCount || 0) + 1;
+};
+
+const hasRequestLog = (req) => Boolean(req?.__adminErrorLogCount);
+
+const normalizeResponseBody = (body) => {
+  if (body === undefined) return undefined;
+  if (Buffer.isBuffer(body)) {
+    return `[Buffer ${body.length} bytes]`;
+  }
+  return redactSensitiveData(body);
 };
 
 export const redactSensitiveData = (value, seen = new WeakSet()) => {
@@ -66,6 +97,7 @@ const buildRequestSnapshot = (req) => {
   if (!req) return null;
 
   return redactSensitiveData({
+    requestId: req.id || '',
     method: req.method,
     originalUrl: req.originalUrl,
     params: req.params,
@@ -98,6 +130,8 @@ export const recordAdminError = async ({
   traceTurnId = null,
   metadata = null,
 } = {}) => {
+  const activeReq = req || getRequestContext();
+  const resolvedRoute = route || getRouteSignature(activeReq);
   const resolvedMessage = message || error?.message || 'Unknown error';
   const stack = error?.stack || '';
 
@@ -108,17 +142,18 @@ export const recordAdminError = async ({
       message: resolvedMessage,
       stack,
       action,
-      route: route || req?.originalUrl || '',
-      orgId,
-      actorUserId,
-      actorAdminId,
+      route: resolvedRoute,
+      orgId: orgId ?? activeReq?.user?.org_id ?? null,
+      actorUserId: actorUserId ?? activeReq?.user?._id ?? null,
+      actorAdminId: actorAdminId ?? activeReq?.admin?._id ?? null,
       chatSessionId,
       traceConversationId,
       traceTurnId,
-      request: buildRequestSnapshot(req),
+      request: buildRequestSnapshot(activeReq),
       metadata: redactSensitiveData(metadata),
     });
 
+    markRequestAsLogged(activeReq);
     return doc;
   } catch (loggingError) {
     process.stderr.write(
@@ -126,6 +161,73 @@ export const recordAdminError = async ({
     );
     return null;
   }
+};
+
+export const bindAdminErrorRequestContext = (req, _res, next) => {
+  req.__adminErrorLogCount = 0;
+  req.id = req.id || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  requestContextStore.run({ req }, () => next());
+};
+
+export const captureResponseErrors = (req, res, next) => {
+  const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+
+  const storeResponseBody = (body) => {
+    if (res.locals.__adminErrorResponseBody === undefined) {
+      res.locals.__adminErrorResponseBody = normalizeResponseBody(body);
+    }
+    return body;
+  };
+
+  res.json = (body) => originalJson(storeResponseBody(body));
+  res.send = (body) => originalSend(storeResponseBody(body));
+
+  res.on('finish', () => {
+    if (res.statusCode < 500 || mongoose.connection.readyState !== 1 || hasRequestLog(req)) {
+      return;
+    }
+
+    const responseBody = res.locals.__adminErrorResponseBody;
+    const responseMessage =
+      (typeof responseBody === 'object' && responseBody && 'message' in responseBody
+        ? responseBody.message
+        : null) ||
+      `HTTP ${res.statusCode} for ${req.method} ${req.originalUrl}`;
+
+    recordAdminError({
+      message: responseMessage,
+      source: 'http.response',
+      action: req.method,
+      route: req.originalUrl,
+      req,
+      metadata: {
+        statusCode: res.statusCode,
+        responseBody,
+      },
+    }).catch(() => {});
+  });
+
+  next();
+};
+
+export const handleExpressErrors = (error, req, res, next) => {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+
+  recordAdminError({
+    error,
+    severity: 'error',
+    source: 'express.error',
+    action: req.method,
+    route: req.originalUrl,
+    req,
+    metadata: { statusCode: 500 },
+  }).catch(() => {});
+
+  res.status(500).json({ message: error?.message || 'Internal server error.' });
 };
 
 export const installAdminErrorCapture = () => {
@@ -162,6 +264,37 @@ export const installAdminErrorCapture = () => {
       error: errorArg,
       message: messageParts.join(' '),
       source: 'console.error',
+      metadata: { args: redactSensitiveData(args) },
+    }).catch(() => {});
+  };
+
+  const originalConsoleWarn = console.warn.bind(console);
+  console.warn = (...args) => {
+    originalConsoleWarn(...args);
+
+    if (mongoose.connection.readyState !== 1) {
+      return;
+    }
+
+    const messageParts = args
+      .map((part) => {
+        if (part instanceof Error) return part.message;
+        if (typeof part === 'string') return part;
+        try {
+          return JSON.stringify(redactSensitiveData(part));
+        } catch {
+          return String(part);
+        }
+      })
+      .filter(Boolean);
+
+    const errorArg = args.find((arg) => arg instanceof Error);
+
+    recordAdminError({
+      error: errorArg,
+      message: messageParts.join(' '),
+      severity: 'warn',
+      source: 'console.warn',
       metadata: { args: redactSensitiveData(args) },
     }).catch(() => {});
   };

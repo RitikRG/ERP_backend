@@ -53,6 +53,8 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 // Cookie Parser Middleware
 app.use(cookieParser());
+app.use(bindAdminErrorRequestContext);
+app.use(captureResponseErrors);
 
 // --- 2. Route Configuration ---
 
@@ -74,15 +76,24 @@ import notificationRoutes from "./routes/notifications.js";
 import adminAuthRoutes from "./routes/adminAuth.js";
 import adminRoutes from "./routes/admin.js";
 import deliveryRoutes from "./routes/delivery.js";
+import systemRoutes from "./routes/system.js";
 import { startCronJobs } from "./helpers/cronJobs.js";
 import { ensureNotificationTemplatesSeeded } from "./services/notificationTemplateService.js";
 import { ensureSeedAdminUser } from "./services/adminBootstrapService.js";
-import { installAdminErrorCapture } from "./services/adminErrorLogger.js";
+import {
+  bindAdminErrorRequestContext,
+  captureResponseErrors,
+  handleExpressErrors,
+  installAdminErrorCapture,
+} from "./services/adminErrorLogger.js";
 
 installAdminErrorCapture();
 
 // Use the auth routes for all requests starting with '/api/auth'
 app.use("/api/auth", authRoutes);
+
+// System routes
+app.use("/api/system", systemRoutes);
 
 // Use the product routes for all requests starting with '/api/products'
 app.use("/api/products", productRoutes);
@@ -157,6 +168,8 @@ app.get("/test-db-connection", async (req,res)=>{
     res.send("Database connection is not successful!");
   }
 })
+
+app.use(handleExpressErrors);
 
 // --- 3. Database Connection ---
 
