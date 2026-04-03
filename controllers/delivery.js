@@ -16,7 +16,11 @@ import {
   createRazorpayOrder,
   verifyRazorpayPaymentSignature,
 } from "../helpers/payments/razorpay.js";
-import { processNotificationEvent } from "../services/notificationService.js";
+import {
+  buildDeliveryOrderDeeplink,
+  buildOwnerOrderDeeplink,
+  processNotificationEvent,
+} from "../services/notificationService.js";
 
 const DELIVERY_HISTORY_STATUSES = ["fulfilled", "cancelled"];
 const DELIVERY_ACTIVE_STATUSES = ["in-delivery"];
@@ -164,7 +168,7 @@ export const sendDeliveryOtp = async (req, res) => {
       orderId: order._id,
       title: 'Delivery OTP Sent',
       body: `OTP generated for Order #${String(order._id).slice(-6)}`,
-      deeplink: `/delivery/orders/${order._id}`
+      deeplink: buildDeliveryOrderDeeplink(order._id)
     });
 
     return res.status(200).json({
@@ -416,11 +420,21 @@ export const completeDeliveryOrder = async (req, res) => {
       orgId: req.user.org_id,
       actorUserId: req.user._id,
       targetRoles: ['owner'],
+      orderId: order._id,
+      title: 'Delivery Completed',
+      body: `Order #${String(order._id).slice(-6)} was successfully delivered.`,
+      deeplink: buildOwnerOrderDeeplink(order._id)
+    });
+
+    processNotificationEvent({
+      type: 'delivery_completed',
+      orgId: req.user.org_id,
+      actorUserId: req.user._id,
       targetUserIds: [req.user._id],
       orderId: order._id,
       title: 'Delivery Completed',
       body: `Order #${String(order._id).slice(-6)} was successfully delivered.`,
-      deeplink: `/online-orders?orderId=${order._id}`
+      deeplink: buildDeliveryOrderDeeplink(order._id, 'history')
     });
 
     return res.status(200).json({

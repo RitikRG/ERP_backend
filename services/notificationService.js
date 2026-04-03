@@ -6,6 +6,9 @@ import User from '../models/user.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
+const OWNER_ONLINE_ORDERS_ROUTE = '/sales/online-orders';
+const DELIVERY_ORDERS_ROUTE = '/delivery/orders';
+
 // Configure web-push
 if (process.env.WEB_PUSH_VAPID_PUBLIC_KEY && process.env.WEB_PUSH_VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
@@ -16,6 +19,45 @@ if (process.env.WEB_PUSH_VAPID_PUBLIC_KEY && process.env.WEB_PUSH_VAPID_PRIVATE_
 } else {
   console.warn('VAPID keys not found. Push notifications will not be sent.');
 }
+
+const buildNotificationUrl = (pathname, query = {}) => {
+  const searchParams = new URLSearchParams();
+
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      searchParams.set(key, String(value));
+    }
+  });
+
+  const queryString = searchParams.toString();
+  return queryString ? `${pathname}?${queryString}` : pathname;
+};
+
+export const buildOwnerOrderDeeplink = (orderId) =>
+  buildNotificationUrl(OWNER_ONLINE_ORDERS_ROUTE, { orderId });
+
+export const buildDeliveryOrderDeeplink = (orderId, scope = 'active') =>
+  buildNotificationUrl(DELIVERY_ORDERS_ROUTE, { orderId, scope });
+
+export const buildPushNotificationData = ({
+  eventId,
+  type,
+  deeplink,
+  orderId,
+}) => ({
+  eventId: eventId?.toString() || null,
+  type,
+  deeplink: deeplink || '',
+  orderId: orderId?.toString() || null,
+  onActionClick: deeplink
+    ? {
+        default: {
+          operation: 'navigateLastFocusedOrOpen',
+          url: deeplink,
+        },
+      }
+    : undefined,
+});
 
 /**
  * Creates an event and handles all fan-out of in-app and push deliveries.
@@ -97,12 +139,12 @@ export const processNotificationEvent = async (params) => {
       notification: {
         title,
         body,
-        data: {
-          eventId: event._id.toString(),
+        data: buildPushNotificationData({
+          eventId: event._id,
           type,
           deeplink,
-          orderId: orderId?.toString() || null,
-        }
+          orderId,
+        })
       }
     });
 

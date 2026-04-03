@@ -5,17 +5,75 @@ import Purchase from '../models/purchase.js';
 import PurchasePayment from '../models/purchasePayment.js';
 import Product from '../models/product.js';
 import Supplier from '../models/supplier.js';
+import OnlineOrder from '../models/orderOnline.js';
+import dotenv from 'dotenv';
+import fetch from 'node-fetch';
+
+dotenv.config();
+
+const DASHBOARD_TIMEZONE = 'Asia/Kolkata';
+
+const formatDateKey = (date) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DASHBOARD_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
+};
+
+const buildDateLabel = (value) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', {
+    timeZone: DASHBOARD_TIMEZONE,
+    day: 'numeric',
+    month: 'short',
+  });
+
+const buildOnlineOrderTrend = (rows, days = 7) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const trendMap = new Map(
+    rows.map((row) => [
+      row._id,
+      {
+        count: row.count || 0,
+        totalAmount: row.totalAmount || 0,
+      },
+    ])
+  );
+
+  return Array.from({ length: days }, (_, index) => {
+    const currentDate = new Date(today);
+    currentDate.setDate(today.getDate() - (days - 1 - index));
+    const isoDate = formatDateKey(currentDate);
+    const entry = trendMap.get(isoDate) || { count: 0, totalAmount: 0 };
+
+    return {
+      date: isoDate,
+      label: buildDateLabel(isoDate),
+      count: entry.count,
+      totalAmount: entry.totalAmount,
+    };
+  });
+};
 
 // ---------- DASHBOARD SUMMARY ----------
 export const getDashboardSummary = async (req, res) => {
   try {
-    const { org_id } = req. query;
+    const { org_id } = req.query;
 
     if (!org_id) {
       return res.status(400).json({ message: 'Organisation ID is required.' });
     }
 
     const orgObjectId = new mongoose.Types.ObjectId(org_id);
+    const onlineOrderTrendSince = new Date();
+    onlineOrderTrendSince.setHours(0, 0, 0, 0);
+    onlineOrderTrendSince.setDate(onlineOrderTrendSince.getDate() - 6);
 
     // ---- SALES SUMMARY ----
     const salesAgg = await Sale.aggregate([
@@ -108,6 +166,86 @@ export const getDashboardSummary = async (req, res) => {
     // ---- SUPPLIERS SUMMARY ----
     const supplierCount = await Supplier.countDocuments({ org_id: orgObjectId });
 
+    // ---- ONLINE ORDERS SUMMARY ----
+    const onlineOrdersAgg = await OnlineOrder.aggregate([
+      { $match: { organisationId: orgObjectId } },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$total' },
+          count: { $sum: 1 },
+          averageOrderValue: { $avg: '$total' }
+        }
+      }
+    ]);
+
+    const onlineOrdersSummary = onlineOrdersAgg[0] || {
+      totalAmount: 0,
+      count: 0,
+      averageOrderValue: 0
+    };
+
+    const onlineOrdersByStatus = await OnlineOrder.aggregate([
+      { $match: { organisationId: orgObjectId } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$total' }
+        }
+      },
+      { $sort: { count: -1, _id: 1 } }
+    ]);
+
+    const onlineOrdersByPaymentMethod = await OnlineOrder.aggregate([
+      { $match: { organisationId: orgObjectId } },
+      {
+        $group: {
+          _id: '$paymentMethod',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$total' }
+        }
+      },
+      { $sort: { count: -1, _id: 1 } }
+    ]);
+
+    const onlineOrdersByFulfillmentMode = await OnlineOrder.aggregate([
+      { $match: { organisationId: orgObjectId } },
+      {
+        $group: {
+          _id: '$fulfillmentMode',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$total' }
+        }
+      },
+      { $sort: { count: -1, _id: 1 } }
+    ]);
+
+    const onlineOrdersTrendRows = await OnlineOrder.aggregate([
+      {
+        $match: {
+          organisationId: orgObjectId,
+          createdAt: { $gte: onlineOrderTrendSince }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt',
+              timezone: DASHBOARD_TIMEZONE
+            }
+          },
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$total' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const onlineOrderTrend = buildOnlineOrderTrend(onlineOrdersTrendRows);
+
     res.status(200).json({
       message: 'Dashboard summary fetched successfully',
       data: {
@@ -136,6 +274,15 @@ export const getDashboardSummary = async (req, res) => {
         inventory: inventorySummary,
         suppliers: {
           count: supplierCount
+        },
+        onlineOrders: {
+          totalAmount: onlineOrdersSummary.totalAmount,
+          count: onlineOrdersSummary.count,
+          averageOrderValue: Math.round(onlineOrdersSummary.averageOrderValue || 0),
+          byStatus: onlineOrdersByStatus,
+          byPaymentMethod: onlineOrdersByPaymentMethod,
+          byFulfillmentMode: onlineOrdersByFulfillmentMode,
+          trend: onlineOrderTrend
         }
       }
     });
@@ -145,11 +292,6 @@ export const getDashboardSummary = async (req, res) => {
     res.status(500).json({ message: 'Server error', error });
   }
 };
-
-
-import dotenv from 'dotenv';
-dotenv.config();
-import fetch from 'node-fetch'; // npm i node-fetch (if not already)
 
 export const getDashboardProjections = async (req, res) => {
   try {

@@ -12,7 +12,10 @@ import {
   rememberDeliveryLocation,
   rememberNotes,
 } from "./interactiveFlow.js";
-import { processNotificationEvent } from "../../services/notificationService.js";
+import {
+  buildOwnerOrderDeeplink,
+  processNotificationEvent,
+} from "../../services/notificationService.js";
 
 const PAYMENT_LINK_EXPIRY_HOURS = 2;
 
@@ -383,7 +386,7 @@ export const toolRegistry = {
       orderId: order._id,
       title: 'New Online Order',
       body: `Order #${String(order._id).slice(-6)} placed for Rs${total}`,
-      deeplink: `/online-orders/${order._id}`
+      deeplink: buildOwnerOrderDeeplink(order._id)
     });
 
     return {
