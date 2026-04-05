@@ -2,11 +2,9 @@ const OPENAI_CHAT_MODEL = "gpt-4o-mini";
 const OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 const OPENAI_SPEECH_MODEL = "gpt-4o-mini-tts";
 const OPENAI_DEFAULT_VOICE = "alloy";
-const OPENAI_BASE_URL =
-  (process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1").replace(
-    /\/+$/,
-    ""
-  );
+const OPENAI_BASE_URL = (
+  process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1"
+).replace(/\/+$/, "");
 const OPENAI_SUPPORTED_VOICES = new Set([
   "alloy",
   "ash",
@@ -122,7 +120,8 @@ export const createOpenAIChatResponse = async ({
   tools,
   toolChoice = "auto",
 }) => {
-  const resolvedModel = model || process.env.OPENAI_CHAT_MODEL || OPENAI_CHAT_MODEL;
+  const resolvedModel = process.env.OPENAI_CHAT_MODEL || OPENAI_CHAT_MODEL;
+  // const resolvedModel = "gpt-4o-mini";
   const response = await openAIJsonRequest("/chat/completions", {
     model: resolvedModel,
     messages,
@@ -139,7 +138,7 @@ export const createOpenAIChatResponse = async ({
   return {
     message: choice.message,
     finishReason: choice.finish_reason,
-    provider: 'open_ai',
+    provider: "open_ai",
     model: response.model || resolvedModel,
     usage: response.usage || null,
     raw: response,
@@ -151,7 +150,9 @@ export const transcribeOpenAIAudioFile = async ({ file, model }) => {
   formData.append("file", file, file.name || "audio.ogg");
   formData.append(
     "model",
-    model || process.env.OPENAI_TRANSCRIPTION_MODEL || OPENAI_TRANSCRIPTION_MODEL
+    model ||
+      process.env.OPENAI_TRANSCRIPTION_MODEL ||
+      OPENAI_TRANSCRIPTION_MODEL
   );
   formData.append("response_format", "json");
 
